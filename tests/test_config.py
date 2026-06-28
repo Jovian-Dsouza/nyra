@@ -8,6 +8,7 @@ from orchestrator.config import (
     Settings,
     _default_hermes_command,
     _default_piper_command,
+    _load_dotenv,
     _resolve_piper_voice_path,
 )
 
@@ -54,6 +55,60 @@ class HermesCommandResolutionTests(unittest.TestCase):
         ):
             settings = Settings.from_env()
             self.assertEqual(settings.hermes_session_idle_timeout_s, 42.5)
+
+    def test_load_dotenv_sets_missing_env_vars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text(
+                "NYRA_TTS_BACKEND=sarvam\nSARVAM_API_KEY=from-dotenv\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {}, clear=True):
+                _load_dotenv(env_file)
+                self.assertEqual(os.environ["NYRA_TTS_BACKEND"], "sarvam")
+                self.assertEqual(os.environ["SARVAM_API_KEY"], "from-dotenv")
+
+    def test_load_dotenv_does_not_override_existing_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("NYRA_TTS_BACKEND=sarvam\n", encoding="utf-8")
+            with patch.dict(os.environ, {"NYRA_TTS_BACKEND": "local"}, clear=False):
+                _load_dotenv(env_file)
+                self.assertEqual(os.environ["NYRA_TTS_BACKEND"], "local")
+
+    def test_from_env_loads_dotenv_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text(
+                "NYRA_TTS_BACKEND=sarvam\nSARVAM_API_KEY=from-dotenv\n",
+                encoding="utf-8",
+            )
+            with patch("orchestrator.config._load_dotenv") as load_dotenv:
+                def _load() -> None:
+                    _load_dotenv(env_file)
+
+                load_dotenv.side_effect = _load
+                with patch.dict(os.environ, {}, clear=True):
+                    settings = Settings.from_env()
+                    self.assertEqual(settings.tts_backend, "sarvam")
+                    self.assertEqual(settings.sarvam_api_key, "from-dotenv")
+
+    def test_env_parses_sarvam_tts_settings(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "NYRA_TTS_BACKEND": "sarvam",
+                "SARVAM_API_KEY": "test-key",
+                "NYRA_SARVAM_TTS_LANGUAGE": "hi-IN",
+                "NYRA_SARVAM_TTS_SPEAKER": "ritu",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+            self.assertEqual(settings.tts_backend, "sarvam")
+            self.assertEqual(settings.sarvam_api_key, "test-key")
+            self.assertEqual(settings.sarvam_tts_language, "hi-IN")
+            self.assertEqual(settings.sarvam_tts_speaker, "ritu")
 
     def test_resolve_piper_voice_path_auto_picks_single_downloaded_voice(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

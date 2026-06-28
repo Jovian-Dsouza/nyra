@@ -8,6 +8,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv(path: Path | None = None) -> None:
+    dotenv_path = path or (_REPO_ROOT / ".env")
+    if not dotenv_path.is_file():
+        return
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -64,7 +87,11 @@ class Settings:
     hermes_command: str = field(default_factory=_default_hermes_command)
     piper_command: str = field(default_factory=_default_piper_command)
     piper_voice_path: Path = field(default_factory=_default_piper_voice_path)
+    tts_backend: str = "local"
     tts_play_command: str | None = None
+    sarvam_api_key: str | None = None
+    sarvam_tts_language: str = "en-IN"
+    sarvam_tts_speaker: str = "ritu"
     wakeword_model_path: Path = Path("models/wakeword/hey_nyra.onnx")
     wakeword_backend: str = "arecord"
     wakeword_model_key: str | None = None
@@ -86,13 +113,18 @@ class Settings:
 
     @staticmethod
     def from_env() -> "Settings":
+        _load_dotenv()
         return Settings(
             hermes_command=os.getenv("NYRA_HERMES_COMMAND", _default_hermes_command()),
             piper_command=os.getenv("NYRA_PIPER_COMMAND", _default_piper_command()),
             piper_voice_path=_resolve_piper_voice_path(
                 Path(os.getenv("NYRA_PIPER_VOICE", "models/tts/voice.onnx"))
             ),
+            tts_backend=os.getenv("NYRA_TTS_BACKEND", "local").strip().lower(),
             tts_play_command=_parse_optional_str(os.getenv("NYRA_TTS_PLAY_COMMAND")),
+            sarvam_api_key=_parse_optional_str(os.getenv("SARVAM_API_KEY")),
+            sarvam_tts_language=os.getenv("NYRA_SARVAM_TTS_LANGUAGE", "en-IN"),
+            sarvam_tts_speaker=os.getenv("NYRA_SARVAM_TTS_SPEAKER", "ritu"),
             wakeword_model_path=Path(
                 os.getenv("NYRA_WAKEWORD_MODEL", "models/wakeword/hey_nyra.onnx")
             ),

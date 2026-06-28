@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import logging
 import os
@@ -91,10 +92,87 @@ class PiperSpeakFn:
             wav_path.unlink(missing_ok=True)
 
 
+class SarvamSpeakFn:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._play_cmd = _resolve_play_command(settings)
+        self._backend_logged = False
+        self._fallback_warned = False
+
+    async def __call__(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+
+        if self._can_use_sarvam():
+            if not self._backend_logged:
+                self._backend_logged = True
+                log.info(
+                    "tts backend: sarvam (language=%s, speaker=%s, playback=%s)",
+                    self._settings.sarvam_tts_language,
+                    self._settings.sarvam_tts_speaker,
+                    " ".join(self._play_cmd),
+                )
+            try:
+                await self._speak_with_sarvam(text)
+                return
+            except Exception:
+                log.exception("sarvam TTS failed; using fallback speech path")
+                await default_speak(text)
+                return
+
+        if not self._fallback_warned:
+            self._fallback_warned = True
+            log.warning(
+                "sarvam TTS unavailable (api_key=%s, playback=%s); using fallback speech path",
+                "set" if self._settings.sarvam_api_key else "missing",
+                " ".join(self._play_cmd) if self._play_cmd else "none",
+            )
+        await default_speak(text)
+
+    def _can_use_sarvam(self) -> bool:
+        return bool(self._play_cmd) and bool(self._settings.sarvam_api_key)
+
+    async def _speak_with_sarvam(self, text: str) -> None:
+        wav_bytes = await asyncio.to_thread(self._synthesize, text)
+        fd, wav_path_raw = tempfile.mkstemp(suffix=".wav", prefix="nyra-tts-", dir="/tmp")
+        os.close(fd)
+        wav_path = Path(wav_path_raw)
+        try:
+            wav_path.write_bytes(wav_bytes)
+            await _run_subprocess([*self._play_cmd, str(wav_path)], name=self._play_cmd[0])
+        finally:
+            wav_path.unlink(missing_ok=True)
+
+    def _synthesize(self, text: str) -> bytes:
+        try:
+            from sarvamai import SarvamAI
+        except ImportError as exc:
+            raise RuntimeError("sarvamai package is not installed") from exc
+
+        client = SarvamAI(api_subscription_key=self._settings.sarvam_api_key)
+        response = client.text_to_speech.convert(
+            text=text,
+            target_language_code=self._settings.sarvam_tts_language,
+            model="bulbul:v3",
+            speaker=self._settings.sarvam_tts_speaker,
+        )
+        if not response.audios:
+            raise RuntimeError("sarvam TTS returned no audio")
+        return base64.b64decode(response.audios[0])
+
+
+def _build_speak_fn(settings: Settings) -> SpeakFn:
+    if settings.tts_backend == "sarvam":
+        return SarvamSpeakFn(settings)
+    return PiperSpeakFn(settings)
+
+
 class TTSQueue:
     def __init__(self, settings: Settings | None = None, speak_fn: SpeakFn | None = None) -> None:
         self._queue: asyncio.Queue[str] = asyncio.Queue()
-        self._speak_fn = speak_fn or PiperSpeakFn(settings or Settings())
+        resolved_settings = settings or Settings()
+        self._speak_fn = speak_fn or _build_speak_fn(resolved_settings)
         self._worker_task: asyncio.Task[None] | None = None
         self._active_speak_task: asyncio.Task[None] | None = None
         self._interrupt_event = asyncio.Event()

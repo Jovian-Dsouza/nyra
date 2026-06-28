@@ -3,7 +3,8 @@ import unittest
 from unittest.mock import patch
 
 from orchestrator.config import Settings
-from orchestrator.tts import TTSQueue
+from orchestrator.tts import PiperSpeakFn, SarvamSpeakFn, TTSQueue
+from orchestrator.tts import _build_speak_fn
 from orchestrator.tts import _resolve_play_command
 
 
@@ -60,6 +61,14 @@ class TTSHelpersTests(unittest.TestCase):
 
         with patch("orchestrator.tts.shutil.which", side_effect=fake_which):
             self.assertEqual(_resolve_play_command(settings), ["aplay", "-q"])
+
+    def test_build_speak_fn_uses_piper_by_default(self) -> None:
+        settings = Settings()
+        self.assertIsInstance(_build_speak_fn(settings), PiperSpeakFn)
+
+    def test_build_speak_fn_uses_sarvam_when_configured(self) -> None:
+        settings = Settings(tts_backend="sarvam", sarvam_api_key="test-key")
+        self.assertIsInstance(_build_speak_fn(settings), SarvamSpeakFn)
 
 
 if __name__ == "__main__":

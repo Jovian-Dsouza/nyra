@@ -20,3 +20,4 @@ models/stt/*
 !models/stt/.gitkeep
 models/tts/*
 !models/tts/.gitkeep
+.env
