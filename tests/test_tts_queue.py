@@ -1,7 +1,10 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 
+from orchestrator.config import Settings
 from orchestrator.tts import TTSQueue
+from orchestrator.tts import _resolve_play_command
 
 
 class TTSQueueTests(unittest.IsolatedAsyncioTestCase):
@@ -41,6 +44,23 @@ class TTSQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(spoken, ["one"])
 
 
+class TTSHelpersTests(unittest.TestCase):
+    def test_resolve_play_command_prefers_override(self) -> None:
+        settings = Settings(tts_play_command="paplay")
+        with patch("orchestrator.tts.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
+            self.assertEqual(_resolve_play_command(settings), ["paplay"])
+
+    def test_resolve_play_command_defaults_to_aplay(self) -> None:
+        settings = Settings()
+
+        def fake_which(name: str) -> str | None:
+            if name == "aplay":
+                return "/usr/bin/aplay"
+            return None
+
+        with patch("orchestrator.tts.shutil.which", side_effect=fake_which):
+            self.assertEqual(_resolve_play_command(settings), ["aplay", "-q"])
+
+
 if __name__ == "__main__":
     unittest.main()
-

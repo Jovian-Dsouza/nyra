@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import subprocess
 import threading
 import time
@@ -25,6 +26,7 @@ class WakeWordEngine:
         self._dispatch_task: asyncio.Task[None] | None = None
         self._backend_thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._detector: _OpenWakeWordDetector | None = None
 
     async def start(self, on_wake: Callable[[], Awaitable[None]]) -> None:
         self._on_wake = on_wake
@@ -39,8 +41,7 @@ class WakeWordEngine:
         self._running = False
         self._backend_enabled = False
         if self._dispatch_task:
-            self._dispatch_task.cancel()
-            await asyncio.gather(self._dispatch_task, return_exceptions=True)
+            await _cancel_task(self._dispatch_task, "wakeword-dispatch")
         await self._join_backend_thread()
         self._backend_thread = None
         self._dispatch_task = None
@@ -78,6 +79,7 @@ class WakeWordEngine:
     def _microphone_loop(self) -> None:
         try:
             detector = _OpenWakeWordDetector.try_create(self._settings)
+            self._detector = detector
             if detector is None:
                 log.warning("openWakeWord backend unavailable; wake detection is disabled")
                 while self._running and self._backend_enabled:
@@ -86,6 +88,8 @@ class WakeWordEngine:
             detector.run(lambda: self._running and self._backend_enabled, self._emit_wake_from_thread)
         except Exception:  # pragma: no cover - defensive logging path
             log.exception("wake-word backend failed")
+        finally:
+            self._detector = None
 
     def _emit_wake_from_thread(self) -> None:
         if not self._loop:
@@ -102,7 +106,11 @@ class WakeWordEngine:
 
     async def _join_backend_thread(self) -> None:
         if self._backend_thread and self._backend_thread.is_alive():
-            log.debug("wake-word backend thread will exit asynchronously")
+            if self._detector is not None:
+                self._detector.stop_capture()
+            await asyncio.to_thread(self._backend_thread.join, 2.0)
+            if self._backend_thread.is_alive():
+                log.debug("wake-word backend thread did not exit within timeout")
 
 
 class _OpenWakeWordDetector:
@@ -132,6 +140,7 @@ class _OpenWakeWordDetector:
         self._arecord_device = arecord_device
         self._last_detection = 0.0
         self._key_warning_emitted = False
+        self._proc: subprocess.Popen[bytes] | None = None
 
     @classmethod
     def try_create(cls, settings: Settings) -> "_OpenWakeWordDetector | None":
@@ -143,11 +152,7 @@ class _OpenWakeWordDetector:
         except Exception as exc:
             log.warning("wake-word imports unavailable: %s", exc)
             return None
-        try:
-            import sounddevice as sd
-        except Exception as exc:
-            sd = None
-            log.warning("sounddevice unavailable (%s); falling back to arecord capture", exc)
+        sd = _resolve_sounddevice_module(settings.wakeword_backend)
 
         model_key = settings.wakeword_model_key
         model_path = settings.wakeword_model_path
@@ -259,6 +264,8 @@ class _OpenWakeWordDetector:
                     if proc.poll() is None:
                         proc.terminate()
                         proc.wait(timeout=2)
+                    if self._proc is proc:
+                        self._proc = None
                 if not is_running():
                     return
                 if exited:
@@ -272,6 +279,12 @@ class _OpenWakeWordDetector:
                         err.decode("utf-8", errors="ignore").strip(),
                     )
                     break
+
+    def stop_capture(self) -> None:
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return
+        proc.terminate()
 
     def _process_frame(self, audio_bytes: bytes, on_wake: Callable[[], None]) -> None:
         audio_frame = self._np.frombuffer(audio_bytes, dtype=self._np.int16)
@@ -287,6 +300,9 @@ class _OpenWakeWordDetector:
             return 0.0
         if self._model_key and self._model_key in scores:
             return float(scores[self._model_key])
+        resolved_key = _resolve_model_score_key(self._model_key, scores)
+        if resolved_key is not None:
+            return float(scores[resolved_key])
         if self._model_key and not self._key_warning_emitted:
             self._key_warning_emitted = True
             log.warning(
@@ -313,6 +329,60 @@ def _arecord_device_candidates(device: str | None) -> list[str | None]:
         seen.add(item)
         ordered.append(item)
     return ordered
+
+
+def _resolve_sounddevice_module(backend: str):
+    normalized = backend.strip().lower()
+    if normalized not in {"arecord", "sounddevice", "auto"}:
+        log.warning(
+            "unknown NYRA_WAKEWORD_BACKEND='%s'; expected one of ['arecord', 'auto', 'sounddevice']",
+            backend,
+        )
+        normalized = "arecord"
+
+    if normalized == "arecord":
+        return None
+
+    try:
+        import sounddevice as sd
+    except Exception as exc:
+        if normalized == "sounddevice":
+            log.warning("sounddevice requested but unavailable (%s)", exc)
+            return None
+        _log_sounddevice_fallback(exc)
+        return None
+
+    return sd
+
+
+async def _cancel_task(task: asyncio.Task[None], name: str) -> None:
+    task.cancel()
+    try:
+        await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), timeout=2.0)
+    except asyncio.TimeoutError:
+        log.warning("%s task did not cancel within timeout", name)
+
+
+def _resolve_model_score_key(model_key: str | None, scores: dict[str, float]) -> str | None:
+    if not model_key:
+        return None
+    canonical_key = _canonical_model_key(model_key)
+    for candidate in scores:
+        if _canonical_model_key(candidate) == canonical_key:
+            return candidate
+    return None
+
+
+def _canonical_model_key(value: str) -> str:
+    return value.split("_v", 1)[0]
+
+
+def _log_sounddevice_fallback(exc: Exception) -> None:
+    message = "sounddevice unavailable (%s); falling back to arecord capture"
+    if shutil.which("arecord"):
+        log.info(message, exc)
+        return
+    log.warning(f"{message}, but `arecord` is also unavailable", exc)
 
 
 def _resolve_or_download_model_path(

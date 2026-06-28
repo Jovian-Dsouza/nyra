@@ -5,13 +5,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=pi
+Group=pi
 WorkingDirectory=/home/pi/nyra
+Environment=HOME=/home/pi
 Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/pi/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NYRA_LOG_LEVEL=INFO
+Environment=NYRA_WAKEWORD_BACKEND=arecord
 ExecStart=/home/pi/nyra/.venv/bin/python -m orchestrator.main
 Restart=always
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
-

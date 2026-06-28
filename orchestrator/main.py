@@ -20,10 +20,13 @@ class Orchestrator:
         self.state = StateMachine()
         self.wakeword = WakeWordEngine(settings=settings)
         self.stt = StreamingSTT(settings=settings)
-        self.hermes = ACPHermesClient(settings.hermes_command)
-        self.aggregator = SentenceAggregator()
-        self.tts = TTSQueue()
+        self.hermes = ACPHermesClient(
+            settings.hermes_command,
+            idle_timeout_s=settings.hermes_session_idle_timeout_s,
+        )
+        self.tts = TTSQueue(settings=settings)
         self._shutdown = asyncio.Event()
+        self._hermes_warmup_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         verify_capture_device(required=self.settings.require_audio_device)
@@ -36,6 +39,7 @@ class Orchestrator:
         await self.wakeword.stop()
         await self.stt.stop()
         await self.tts.stop()
+        await self.hermes.close()
         logging.info("orchestrator stopped")
 
     async def run_forever(self) -> None:
@@ -52,6 +56,7 @@ class Orchestrator:
             self.state.set_listening_for_barge_in()
         elif self.state.state == State.IDLE:
             self.state.transition(State.LISTENING, "wake-word")
+        self._start_hermes_warmup()
         await self.wakeword.pause_detection()
         await self.stt.start(self._on_partial, self._on_final)
 
@@ -69,25 +74,50 @@ class Orchestrator:
             self.state.transition(State.THINKING, "final-transcript")
         await self.stt.stop()
         await self.wakeword.resume_detection()
-        await self._stream_hermes_and_speak(text)
+        try:
+            await self._stream_hermes_and_speak(text)
+        except Exception:
+            logging.exception("hermes/tts pipeline failed")
+            if self.state.state != State.LISTENING:
+                self.state.transition(State.IDLE, "hermes-error")
 
     async def _stream_hermes_and_speak(self, prompt: str) -> None:
+        logging.info("sending prompt to hermes: %s", prompt)
+        aggregator = SentenceAggregator()
         seen_sentence = False
         async for delta in self.hermes.stream(prompt):
-            sentences = self.aggregator.push(delta)
+            logging.info("hermes delta: %s", delta)
+            sentences = aggregator.push(delta)
             for sentence in sentences:
+                logging.info("queueing tts sentence: %s", sentence)
                 await self.tts.enqueue(sentence)
                 if not seen_sentence:
                     self.state.transition(State.SPEAKING, "first-sentence")
                     seen_sentence = True
-        tail = self.aggregator.flush_tail()
+        tail = aggregator.flush_tail()
         if tail:
+            logging.info("queueing tts tail: %s", tail)
             await self.tts.enqueue(tail)
             if not seen_sentence:
                 self.state.transition(State.SPEAKING, "tail-sentence")
         await self.tts.drain()
+        logging.info("tts queue drained")
         if self.state.state != State.LISTENING:
             self.state.transition(State.IDLE, "response-complete")
+
+    def _start_hermes_warmup(self) -> None:
+        if self._hermes_warmup_task and not self._hermes_warmup_task.done():
+            return
+        self._hermes_warmup_task = asyncio.create_task(
+            self._warm_hermes_session(),
+            name="hermes-warmup",
+        )
+
+    async def _warm_hermes_session(self) -> None:
+        try:
+            await self.hermes.warmup()
+        except Exception:
+            logging.exception("hermes warmup failed")
 
     def request_shutdown(self) -> None:
         self._shutdown.set()

@@ -87,10 +87,12 @@ sudo systemctl status nyra.service
 ## Configuration
 
 Environment variables:
-- `NYRA_HERMES_COMMAND` (default: `python -m acp_adapter.entry`)
+- `NYRA_HERMES_COMMAND` (default: auto-detect `~/.local/bin/hermes acp`, then `hermes acp`, then `~/.hermes/hermes-agent/venv/bin/hermes acp`, else fallback to `python -m acp_adapter.entry`)
 - `NYRA_PIPER_COMMAND` (default: `piper`)
 - `NYRA_PIPER_VOICE` (default: `models/tts/voice.onnx`)
+- `NYRA_TTS_PLAY_COMMAND` (optional; override playback command, e.g. `paplay` or `aplay -q`)
 - `NYRA_WAKEWORD_MODEL` (default: `models/wakeword/hey_nyra.onnx`)
+- `NYRA_WAKEWORD_BACKEND` (default: `arecord`; options: `arecord`, `auto`, `sounddevice`)
 - `NYRA_WAKEWORD_MODEL_KEY` (optional; output key to use from model scores)
 - `NYRA_WAKEWORD_THRESHOLD` (default: `0.5`)
 - `NYRA_WAKEWORD_SAMPLE_RATE` (default: `16000`)
@@ -110,7 +112,11 @@ If `NYRA_WAKEWORD_MODEL` does not exist, Nyra now falls back to built-in `openWa
 Set `NYRA_WAKEWORD_MODEL_KEY` to the specific built-in key you want to use (`alexa`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy`, `timer`, `weather`).
 If the model file is missing, Nyra will auto-download the selected built-in ONNX model to `models/wakeword/` on first run.
 
-If you see `PortAudio library not found`, Nyra now falls back to ALSA capture via `arecord` automatically.
+Nyra uses ALSA `arecord` for wake-word capture by default on Raspberry Pi.
+Set `NYRA_WAKEWORD_BACKEND=auto` to try `sounddevice` first with automatic fallback, or `NYRA_WAKEWORD_BACKEND=sounddevice` to require PortAudio explicitly.
+If you see `PortAudio library not found`, Nyra can still fall back to ALSA capture via `arecord`.
+
+TTS now prefers Piper when both `NYRA_PIPER_COMMAND` and `NYRA_PIPER_VOICE` are usable, then plays the synthesized WAV with `aplay` by default. If Piper or the voice model is missing, Nyra logs a warning and falls back to local CLI speech (`espeak-ng`, `espeak`, or `spd-say`), then to the placeholder timing-only path as a last resort.
 If `-D hw:X,Y` fails, Nyra retries with `plughw:X,Y` and then default input automatically.
 
 STT now uses Vosk streaming recognition and prints live partial/final text in logs:

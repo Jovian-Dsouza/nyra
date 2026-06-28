@@ -3,8 +3,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import shlex
 import shutil
+import tempfile
 from collections.abc import Awaitable, Callable
+from pathlib import Path
+
+from orchestrator.config import Settings
 
 
 log = logging.getLogger(__name__)
@@ -15,21 +21,80 @@ SpeakFn = Callable[[str], Awaitable[None]]
 async def default_speak(text: str) -> None:
     """Fallback speech path.
 
-    If `spd-say` is available it speaks locally; otherwise this simulates
+    Prefer a local speech CLI when available; otherwise simulate
     synthesis/playback latency so orchestration behavior stays testable.
     """
 
-    if shutil.which("spd-say"):
-        proc = await asyncio.create_subprocess_exec("spd-say", text)
-        await proc.wait()
-        return
+    for cmd in (["espeak-ng", text], ["espeak", text], ["spd-say", text]):
+        if shutil.which(cmd[0]):
+            proc = await asyncio.create_subprocess_exec(*cmd)
+            await proc.wait()
+            return
     await asyncio.sleep(min(0.2 + len(text) * 0.01, 2.0))
 
 
+class PiperSpeakFn:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._piper_cmd = shlex.split(settings.piper_command)
+        self._play_cmd = _resolve_play_command(settings)
+        self._backend_logged = False
+        self._fallback_warned = False
+
+    async def __call__(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+
+        if self._can_use_piper():
+            if not self._backend_logged:
+                self._backend_logged = True
+                log.info(
+                    "tts backend: piper (voice=%s, playback=%s)",
+                    self._settings.piper_voice_path,
+                    " ".join(self._play_cmd),
+                )
+            await self._speak_with_piper(text)
+            return
+
+        if not self._fallback_warned:
+            self._fallback_warned = True
+            log.warning(
+                "piper TTS unavailable (command=%s, voice_exists=%s, playback=%s); using fallback speech path",
+                self._settings.piper_command,
+                self._settings.piper_voice_path.exists(),
+                " ".join(self._play_cmd) if self._play_cmd else "none",
+            )
+        await default_speak(text)
+
+    def _can_use_piper(self) -> bool:
+        return bool(self._play_cmd) and _command_exists(self._piper_cmd) and self._settings.piper_voice_path.exists()
+
+    async def _speak_with_piper(self, text: str) -> None:
+        fd, wav_path_raw = tempfile.mkstemp(suffix=".wav", prefix="nyra-tts-", dir="/tmp")
+        os.close(fd)
+        wav_path = Path(wav_path_raw)
+        try:
+            await _run_subprocess(
+                [
+                    *self._piper_cmd,
+                    "--model",
+                    str(self._settings.piper_voice_path),
+                    "--output_file",
+                    str(wav_path),
+                ],
+                input_text=text,
+                name="piper",
+            )
+            await _run_subprocess([*self._play_cmd, str(wav_path)], name=self._play_cmd[0])
+        finally:
+            wav_path.unlink(missing_ok=True)
+
+
 class TTSQueue:
-    def __init__(self, speak_fn: SpeakFn | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, speak_fn: SpeakFn | None = None) -> None:
         self._queue: asyncio.Queue[str] = asyncio.Queue()
-        self._speak_fn = speak_fn or default_speak
+        self._speak_fn = speak_fn or PiperSpeakFn(settings or Settings())
         self._worker_task: asyncio.Task[None] | None = None
         self._active_speak_task: asyncio.Task[None] | None = None
         self._interrupt_event = asyncio.Event()
@@ -87,3 +152,46 @@ class TTSQueue:
                 self._queue.get_nowait()
                 self._queue.task_done()
 
+
+def _resolve_play_command(settings: Settings) -> list[str] | None:
+    if settings.tts_play_command:
+        play_cmd = shlex.split(settings.tts_play_command)
+        return play_cmd if _command_exists(play_cmd) else None
+    if shutil.which("aplay"):
+        return ["aplay", "-q"]
+    if shutil.which("paplay"):
+        return ["paplay"]
+    return None
+
+
+def _command_exists(cmd: list[str]) -> bool:
+    if not cmd:
+        return False
+    binary = cmd[0]
+    return bool(shutil.which(binary) or Path(binary).exists())
+
+
+async def _run_subprocess(cmd: list[str], *, name: str, input_text: str | None = None) -> None:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE if input_text is not None else None,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        if input_text is not None and proc.stdin is not None:
+            proc.stdin.write((input_text + "\n").encode("utf-8"))
+            await proc.stdin.drain()
+            proc.stdin.close()
+        returncode = await proc.wait()
+    except asyncio.CancelledError:
+        if proc.returncode is None:
+            proc.terminate()
+            await proc.wait()
+        raise
+
+    if returncode == 0:
+        return
+
+    stderr = await proc.stderr.read() if proc.stderr else b""
+    raise RuntimeError(f"{name} failed with code {returncode}: {stderr.decode('utf-8', errors='ignore').strip()}")
