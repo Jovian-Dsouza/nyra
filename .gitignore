@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Local agent / IDE tooling
+.agents/
+.codex/
+.cursor/
+
+# Downloaded model artifacts (auto-fetched on first run; see README)
+models/wakeword/*
+!models/wakeword/.gitkeep
+models/stt/*
+!models/stt/.gitkeep
+models/tts/*
+!models/tts/.gitkeep

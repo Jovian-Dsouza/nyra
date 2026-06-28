@@ -1,0 +1,17 @@
+[Unit]
+Description=Nyra Voice Orchestrator
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/nyra
+Environment=PYTHONUNBUFFERED=1
+Environment=NYRA_LOG_LEVEL=INFO
+ExecStart=/home/pi/nyra/.venv/bin/python -m orchestrator.main
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+
