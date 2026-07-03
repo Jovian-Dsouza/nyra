@@ -321,3 +321,7 @@ TTS models may download on first use, which can take time. The Docker image pre-
 
 - [LiveKit Agents Documentation](https://docs.livekit.io/agents/)
 - [LiveKit Python SDK](https://github.com/livekit/agents)
+
+## useful commands
+uv run python ingest_cloud.py ../nyra-livekit/notes/user_context.md
+uv run python nyra_agent.py console

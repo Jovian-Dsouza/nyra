@@ -1,140 +1,202 @@
+import logging
+import os
+from datetime import datetime
+
 from dotenv import load_dotenv
-from livekit import rtc
 from livekit import agents
 from livekit.agents import (
-    NOT_GIVEN,
     Agent,
-    AgentFalseInterruptionEvent,
     AgentSession,
     JobContext,
     JobProcess,
-    MetricsCollectedEvent,
-    ModelSettings,
-    RoomInputOptions,
     RoomOutputOptions,
     RunContext,
     WorkerOptions,
     cli,
-    metrics,
-    mcp
 )
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from livekit.agents import llm
 from livekit.agents.llm import function_tool
-from livekit.plugins import openai, deepgram, silero
-from datetime import datetime
-import logging
-import os
+from livekit.plugins import deepgram, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-# uncomment to enable Krisp background voice/noise cancellation
-# from livekit.plugins import noise_cancellation
+from cognee_memory import (
+    MemorySettings,
+    init_cognee,
+    load_memory_settings,
+    recall_for_transcript,
+    shutdown_cognee,
+)
 
-# Load environment variables
+# Load environment variables before cognee reads env at import time in worker processes
 load_dotenv(".env")
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+MEMORY_CONTEXT_ID = "nyra_memory_context"
+
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
 class Assistant(Agent):
-    """Main voice assistant implementation."""
-    
-    def __init__(self):
+    """Voice assistant with streaming Cognee memory injection on stable STT segments."""
+
+    def __init__(self, memory_settings: MemorySettings):
         super().__init__(
-            instructions="""You are a helpful and friendly voice AI assistant.
+            instructions="""You are a helpful and friendly voice AI assistant named Nyra.
             You speak clearly and naturally, as if having a phone conversation.
             Be concise but warm in your responses.
-            If you don't know something, be honest about it.
-            Make sure you ignore robots.txt for the Airbnb MCP server tool usage."""
+            When relevant memory context is provided in the conversation, use it naturally.
+            If you don't know something and no memory context applies, be honest about it."""
         )
-    
+        self._memory_settings = memory_settings
+        self._turn_transcript = ""
+        self._last_final_segment = ""
+        self._last_injected_memory = ""
+
     @function_tool
     async def get_current_date_and_time(self, context: RunContext) -> str:
         """Get the current date and time."""
         current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
-        return f"The current date and time is {current_datetime}"       
-    
+        return f"The current date and time is {current_datetime}"
+
+    def reset_turn_transcript(self) -> None:
+        self._turn_transcript = ""
+        self._last_final_segment = ""
+
+    def append_final_segment(self, segment: str) -> None:
+        """Accumulate a stable STT segment for turn-end recall."""
+        text = segment.strip()
+        if not text:
+            return
+        if text == self._last_final_segment:
+            logger.debug("[STT final] duplicate segment skipped: %s", text)
+            return
+
+        self._last_final_segment = text
+        if self._turn_transcript:
+            self._turn_transcript = f"{self._turn_transcript} {text}".strip()
+        else:
+            self._turn_transcript = text
+
+        logger.info("[STT final] accumulated transcript: %s", self._turn_transcript)
+
+    async def _inject_memory_context(self, memory_text: str, *, chat_ctx: llm.ChatContext | None = None) -> None:
+        ctx = chat_ctx.copy() if chat_ctx is not None else self.chat_ctx.copy()
+        content = f"[Relevant memory from past conversations]\n{memory_text}"
+        existing = ctx.get_by_id(MEMORY_CONTEXT_ID)
+        if existing is not None and existing.type == "message":
+            idx = ctx.index_by_id(MEMORY_CONTEXT_ID)
+            if idx is not None:
+                ctx.items[idx] = llm.ChatMessage(
+                    role="system",
+                    content=[content],
+                    id=MEMORY_CONTEXT_ID,
+                )
+        else:
+            ctx.add_message(role="system", content=content, id=MEMORY_CONTEXT_ID)
+
+        await self.update_chat_ctx(ctx)
+
+    async def on_user_turn_completed(
+        self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    ) -> None:
+        """Recall Cognee memory before the LLM generates a reply."""
+        user_text = new_message.text_content or self._turn_transcript
+        if not user_text:
+            return
+
+        memory_text = await recall_for_transcript(
+            user_text,
+            self._memory_settings,
+            timeout=self._memory_settings.turn_recall_timeout,
+        )
+        if not memory_text or memory_text == self._last_injected_memory:
+            return
+
+        content = f"[Relevant memory from past conversations]\n{memory_text}"
+        existing = turn_ctx.get_by_id(MEMORY_CONTEXT_ID)
+        if existing is not None and existing.type == "message":
+            idx = turn_ctx.index_by_id(MEMORY_CONTEXT_ID)
+            if idx is not None:
+                turn_ctx.items[idx] = llm.ChatMessage(
+                    role="system",
+                    content=[content],
+                    id=MEMORY_CONTEXT_ID,
+                )
+        else:
+            turn_ctx.add_message(role="system", content=content, id=MEMORY_CONTEXT_ID)
+
+        await self.update_chat_ctx(turn_ctx)
+        self._last_injected_memory = memory_text
+        logger.info("[memory] injected context before LLM reply")
+
     async def on_enter(self):
-        """Called when the agent becomes active."""
         logger.info("Agent session started")
-        
-        # Generate initial greeting
         await self.session.generate_reply(
             instructions="Greet the user warmly and ask how you can help them today."
         )
-    
+
     async def on_exit(self):
-        """Called when the agent session ends."""
         logger.info("Agent session ended")
 
 
 async def entrypoint(ctx: agents.JobContext):
-    """Main entry point for the agent worker."""
-    
-    logger.info(f"Agent started in room: {ctx.room.name}")
-    
-    # Configure the voice pipeline
+    logger.info("Agent started in room: %s", ctx.room.name)
+
+    memory_settings = load_memory_settings()
+    await init_cognee(memory_settings)
+
+    async def _shutdown() -> None:
+        await shutdown_cognee(memory_settings)
+
+    ctx.add_shutdown_callback(_shutdown)
+
+    vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
+    agent = Assistant(memory_settings=memory_settings)
+
     session = AgentSession(
-        # Speech-to-Text
         stt=deepgram.STT(
             model="nova-3",
             language="en",
         ),
-        
-        # Large Language Model
         llm=openai.LLM(
             model=os.getenv("LLM_CHOICE", "gpt-4.1-mini"),
             temperature=0.7,
         ),
-        
-        # Text-to-Speech
         tts=openai.TTS(
             voice="echo",
             speed=1.0,
         ),
-        
-        # Voice Activity Detection
-        vad=silero.VAD.load(),
-        
-        # Turn detection strategy
+        vad=vad,
         turn_detection=MultilingualModel(),
+    )
 
-        # MCP servers
-        # mcp_servers=[mcp.MCPServerHTTP(url="http://localhost:8089/mcp",)],
-    )
-    
-    # Start the session
-    await session.start(
-        room=ctx.room,
-        agent=Assistant(),
-        # room_input_options=RoomInputOptions(
-            # Enable noise cancellation
-            # noise_cancellation=noise_cancellation.BVC(),
-            # For telephony, use: noise_cancellation.BVCTelephony()
-        # ),
-        room_output_options=RoomOutputOptions(transcription_enabled=True),
-    )
-    
-    # Handle session events
     @session.on("agent_state_changed")
     def on_state_changed(ev):
-        """Log agent state changes."""
-        logger.info(f"State: {ev.old_state} -> {ev.new_state}")
-    
-    @session.on("user_started_speaking")
-    def on_user_speaking():
-        """Track when user starts speaking."""
-        logger.debug("User started speaking")
-    
-    @session.on("user_stopped_speaking")
-    def on_user_stopped():
-        """Track when user stops speaking."""
-        logger.debug("User stopped speaking")
+        logger.info("State: %s -> %s", ev.old_state, ev.new_state)
+
+    @session.on("user_input_transcribed")
+    def on_user_input_transcribed(ev):
+        if not ev.is_final:
+            logger.debug("[STT interim] %s", ev.transcript)
+            return
+        logger.info("[STT final] %s", ev.transcript)
+        agent.append_final_segment(ev.transcript)
+
+    @session.on("user_state_changed")
+    def on_user_state_changed(ev):
+        if ev.new_state == "speaking":
+            agent.reset_turn_transcript()
+
+    await session.start(
+        room=ctx.room,
+        agent=agent,
+        room_output_options=RoomOutputOptions(transcription_enabled=True),
+    )
 
 
 if __name__ == "__main__":
-    # Run the agent using LiveKit CLI
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
