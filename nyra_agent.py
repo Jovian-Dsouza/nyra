@@ -27,7 +27,6 @@ from cognee_memory import (
     shutdown_cognee,
 )
 
-# Load environment variables before cognee reads env at import time in worker processes
 load_dotenv(".env")
 
 logging.basicConfig(level=logging.INFO)
@@ -40,8 +39,24 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
+def _upsert_memory_message(chat_ctx: llm.ChatContext, memory_text: str) -> None:
+    content = f"[Relevant memory from past conversations]\n{memory_text}"
+    existing = chat_ctx.get_by_id(MEMORY_CONTEXT_ID)
+    if existing is not None and existing.type == "message":
+        idx = chat_ctx.index_by_id(MEMORY_CONTEXT_ID)
+        if idx is not None:
+            chat_ctx.items[idx] = llm.ChatMessage(
+                role="system",
+                content=[content],
+                id=MEMORY_CONTEXT_ID,
+            )
+            return
+
+    chat_ctx.add_message(role="system", content=content, id=MEMORY_CONTEXT_ID)
+
+
 class Assistant(Agent):
-    """Voice assistant with streaming Cognee memory injection on stable STT segments."""
+    """Voice assistant with Cognee memory recall before each LLM reply."""
 
     def __init__(self, memory_settings: MemorySettings):
         super().__init__(
@@ -52,8 +67,6 @@ class Assistant(Agent):
             If you don't know something and no memory context applies, be honest about it."""
         )
         self._memory_settings = memory_settings
-        self._turn_transcript = ""
-        self._last_final_segment = ""
         self._last_injected_memory = ""
 
     @function_tool
@@ -62,74 +75,19 @@ class Assistant(Agent):
         current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
         return f"The current date and time is {current_datetime}"
 
-    def reset_turn_transcript(self) -> None:
-        self._turn_transcript = ""
-        self._last_final_segment = ""
-
-    def append_final_segment(self, segment: str) -> None:
-        """Accumulate a stable STT segment for turn-end recall."""
-        text = segment.strip()
-        if not text:
-            return
-        if text == self._last_final_segment:
-            logger.debug("[STT final] duplicate segment skipped: %s", text)
-            return
-
-        self._last_final_segment = text
-        if self._turn_transcript:
-            self._turn_transcript = f"{self._turn_transcript} {text}".strip()
-        else:
-            self._turn_transcript = text
-
-        logger.info("[STT final] accumulated transcript: %s", self._turn_transcript)
-
-    async def _inject_memory_context(self, memory_text: str, *, chat_ctx: llm.ChatContext | None = None) -> None:
-        ctx = chat_ctx.copy() if chat_ctx is not None else self.chat_ctx.copy()
-        content = f"[Relevant memory from past conversations]\n{memory_text}"
-        existing = ctx.get_by_id(MEMORY_CONTEXT_ID)
-        if existing is not None and existing.type == "message":
-            idx = ctx.index_by_id(MEMORY_CONTEXT_ID)
-            if idx is not None:
-                ctx.items[idx] = llm.ChatMessage(
-                    role="system",
-                    content=[content],
-                    id=MEMORY_CONTEXT_ID,
-                )
-        else:
-            ctx.add_message(role="system", content=content, id=MEMORY_CONTEXT_ID)
-
-        await self.update_chat_ctx(ctx)
-
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
         """Recall Cognee memory before the LLM generates a reply."""
-        user_text = new_message.text_content or self._turn_transcript
+        user_text = new_message.text_content
         if not user_text:
             return
 
-        memory_text = await recall_for_transcript(
-            user_text,
-            self._memory_settings,
-            timeout=self._memory_settings.turn_recall_timeout,
-        )
+        memory_text = await recall_for_transcript(user_text, self._memory_settings)
         if not memory_text or memory_text == self._last_injected_memory:
             return
 
-        content = f"[Relevant memory from past conversations]\n{memory_text}"
-        existing = turn_ctx.get_by_id(MEMORY_CONTEXT_ID)
-        if existing is not None and existing.type == "message":
-            idx = turn_ctx.index_by_id(MEMORY_CONTEXT_ID)
-            if idx is not None:
-                turn_ctx.items[idx] = llm.ChatMessage(
-                    role="system",
-                    content=[content],
-                    id=MEMORY_CONTEXT_ID,
-                )
-        else:
-            turn_ctx.add_message(role="system", content=content, id=MEMORY_CONTEXT_ID)
-
-        await self.update_chat_ctx(turn_ctx)
+        _upsert_memory_message(turn_ctx, memory_text)
         self._last_injected_memory = memory_text
         logger.info("[memory] injected context before LLM reply")
 
@@ -177,19 +135,6 @@ async def entrypoint(ctx: agents.JobContext):
     @session.on("agent_state_changed")
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
-
-    @session.on("user_input_transcribed")
-    def on_user_input_transcribed(ev):
-        if not ev.is_final:
-            logger.debug("[STT interim] %s", ev.transcript)
-            return
-        logger.info("[STT final] %s", ev.transcript)
-        agent.append_final_segment(ev.transcript)
-
-    @session.on("user_state_changed")
-    def on_user_state_changed(ev):
-        if ev.new_state == "speaking":
-            agent.reset_turn_transcript()
 
     await session.start(
         room=ctx.room,

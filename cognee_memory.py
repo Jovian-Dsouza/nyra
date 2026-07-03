@@ -35,8 +35,7 @@ class MemorySettings:
     recall_type: SearchType
     cognee_base_url: str = ""
     cognee_api_key: str = ""
-    recall_timeout: float = 0.4
-    turn_recall_timeout: float = 8.0
+    recall_timeout: float = 8.0
 
     @property
     def use_cloud(self) -> bool:
@@ -57,9 +56,6 @@ def load_memory_settings() -> MemorySettings:
     cognee_api_key = _strip_env(os.environ.get("COGNEE_API_KEY", ""))
     default_timeout = "8.0" if cognee_base_url and cognee_api_key else "0.4"
     recall_timeout = float(os.environ.get("COGNEE_RECALL_TIMEOUT", default_timeout))
-    turn_recall_timeout = float(
-        os.environ.get("COGNEE_TURN_RECALL_TIMEOUT", str(recall_timeout))
-    )
     default_dataset = "default_dataset" if cognee_base_url and cognee_api_key else "nyra_sessions"
     return MemorySettings(
         openai_api_key=api_key,
@@ -70,7 +66,6 @@ def load_memory_settings() -> MemorySettings:
         cognee_base_url=cognee_base_url,
         cognee_api_key=cognee_api_key,
         recall_timeout=recall_timeout,
-        turn_recall_timeout=turn_recall_timeout,
     )
 
 
