@@ -1,11 +1,12 @@
 """The only module that draws with pygame.
 
-Neo Supreme: a stark black/white canvas with one loud red hit reserved for
-the brand tag and status tag — solid rectangular "box logo" blocks, heavy
-bold type, thick square-edged dividers. No gradients, no soft per-phase
-colors, no rounded corners.
+Warm monochrome canvas, one reserved "ember" gradient (amber -> crimson) used
+only for the ambient glow, the live status dot, and the "Nyra" field label.
+Everything else is flat ink-on-dark text with hairline dividers — no boxes,
+no per-phase rainbow, no hard drop shadows.
 """
 
+import math
 from datetime import datetime
 
 import pygame
@@ -13,6 +14,14 @@ import pygame
 from nyra_ui import constants as const
 from nyra_ui.state import UIPhase, UIState
 from nyra_ui.theme import get_theme
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+def _lerp_color(c1: tuple, c2: tuple, t: float) -> tuple:
+    return tuple(int(_lerp(c1[i], c2[i], t)) for i in range(3))
 
 
 def _wrap_text(text: str, font: "pygame.font.Font", max_width: int, max_lines: int = 2) -> list[str]:
@@ -42,16 +51,86 @@ def _wrap_text(text: str, font: "pygame.font.Font", max_width: int, max_lines: i
     return lines or [""]
 
 
+def _build_background(width: int, height: int) -> "pygame.Surface":
+    """Warm radial vignette, centered high, fading to near-black at the edges.
+    Built once with concentric rings — a cheap stand-in for a CSS radial-gradient."""
+    surface = pygame.Surface((width, height))
+    surface.fill(const.BG_EDGE)
+    center = (width // 2, int(height * 0.16))
+    max_radius = int(width * 0.72)
+    steps = 90
+    for i in range(steps, -1, -1):
+        t = i / steps
+        radius = int(max_radius * t)
+        if t > 0.5:
+            color = _lerp_color(const.BG_MID, const.BG_EDGE, (t - 0.5) * 2)
+        else:
+            color = _lerp_color(const.BG_CENTER, const.BG_MID, t * 2)
+        pygame.draw.circle(surface, color, center, radius)
+    return surface
+
+
+def _build_glow_sprite(diameter: int) -> "pygame.Surface":
+    """Soft ember radial glow: amber core -> orange -> crimson -> transparent.
+    Concentric alpha-blended rings at high step count fake a gaussian blur."""
+    surface = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    center = (diameter // 2, diameter // 2)
+    max_radius = diameter // 2
+    steps = 120
+    stops = [
+        (0.0, const.EMBER_1, 235),
+        (0.35, const.EMBER_2, 150),
+        (0.55, const.EMBER_3, 90),
+        (0.72, const.EMBER_3, 0),
+    ]
+    for i in range(steps, -1, -1):
+        t = i / steps
+        radius = max(1, int(max_radius * t))
+        color = stops[-1][1]
+        alpha = 0
+        for j in range(len(stops) - 1):
+            t0, c0, a0 = stops[j]
+            t1, c1, a1 = stops[j + 1]
+            if t0 <= t <= t1:
+                local_t = 0 if t1 == t0 else (t - t0) / (t1 - t0)
+                color = _lerp_color(c0, c1, local_t)
+                alpha = int(_lerp(a0, a1, local_t))
+                break
+        else:
+            if t < stops[0][0]:
+                color, alpha = stops[0][1], stops[0][2]
+        pygame.draw.circle(surface, (*color, alpha), center, radius)
+    return surface
+
+
+def _gradient_text(text: str, font: "pygame.font.Font", start: tuple, end: tuple) -> "pygame.Surface":
+    """Renders text filled with a horizontal amber->crimson gradient."""
+    mask = font.render(text, True, (255, 255, 255))
+    width, height = mask.get_size()
+    gradient = pygame.Surface((max(width, 1), max(height, 1)), pygame.SRCALPHA)
+    for x in range(width):
+        t = x / max(width - 1, 1)
+        color = _lerp_color(start, end, t)
+        pygame.draw.line(gradient, (*color, 255), (x, 0), (x, height))
+    gradient.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    return gradient
+
+
 class PygameRenderer:
     def __init__(self) -> None:
         pygame.font.init()
-        self._font_heavy = pygame.font.SysFont(const.FONT_NAME_HEAVY, const.FONT_SIZE_HEADER, bold=True)
-        self._font_heavy.set_italic(True)
-        self._font_tag = pygame.font.SysFont(const.FONT_NAME_HEAVY, const.FONT_SIZE_SMALL, bold=True)
-        self._font_body = pygame.font.SysFont(const.FONT_NAME_BODY, const.FONT_SIZE_BODY, bold=True)
-        self._font_small = pygame.font.SysFont(const.FONT_NAME_BODY, const.FONT_SIZE_SMALL, bold=True)
-        self._font_clock_large = pygame.font.SysFont(const.FONT_NAME_HEAVY, const.FONT_SIZE_CLOCK_LARGE, bold=True)
-        self._font_clock_small = pygame.font.SysFont(const.FONT_NAME_HEAVY, const.FONT_SIZE_CLOCK_SMALL, bold=True)
+        self._font_wordmark = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_WORDMARK, bold=True)
+        self._font_status = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_STATUS, bold=True)
+        self._font_label = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_LABEL, bold=True)
+        self._font_body = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_BODY)
+        self._font_mono = pygame.font.SysFont(const.FONT_NAME_MONO, const.FONT_SIZE_STATUS)
+        self._font_clock_large = pygame.font.SysFont(const.FONT_NAME_MONO, const.FONT_SIZE_CLOCK_LARGE, bold=True)
+        self._font_clock_small = pygame.font.SysFont(const.FONT_NAME_MONO, const.FONT_SIZE_CLOCK_SMALL)
+        self._font_date = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_DATE, bold=True)
+
+        self._background = _build_background(const.SCREEN_WIDTH, const.SCREEN_HEIGHT)
+        self._glow_source = _build_glow_sprite(360)
+        self._dot_glow_source = _build_glow_sprite(120)
         self._logos = self._load_logos()
 
     def _load_logos(self) -> dict[str, "pygame.Surface"]:
@@ -63,46 +142,30 @@ class PygameRenderer:
                 image = pygame.image.load(path).convert_alpha()
                 scale = const.LOGO_HEIGHT / image.get_height()
                 size = (max(1, int(image.get_width() * scale)), const.LOGO_HEIGHT)
-                logos[name] = pygame.transform.smoothscale(image, size)
+                scaled = pygame.transform.smoothscale(image, size)
+                gray = pygame.transform.grayscale(scaled)
+                gray.set_alpha(const.LOGO_ALPHA)
+                logos[name] = gray
             except (FileNotFoundError, pygame.error):
                 logos[name] = None
         return logos
 
-    def _draw_tag(
-        self,
-        surface: "pygame.Surface",
-        text: str,
-        x: int,
-        y: int,
-        font: "pygame.font.Font",
-        *,
-        align_right: bool = False,
-        pad_x: int = 8,
-        pad_y: int = 4,
-    ) -> "pygame.Rect":
-        """Solid red rectangle with bold white text — the "box logo" tag."""
-        label = font.render(text, True, const.TAG_TEXT_COLOR)
-        width = label.get_width() + pad_x * 2
-        height = label.get_height() + pad_y * 2
-        left = x - width if align_right else x
-        rect = pygame.Rect(left, y, width, height)
-        pygame.draw.rect(surface, const.SUPREME_RED, rect)
-        surface.blit(label, (rect.x + pad_x, rect.y + pad_y))
-        return rect
+    def _blit_glow(self, surface, source: "pygame.Surface", center: tuple, diameter: float) -> None:
+        # Plain alpha compositing, not BLEND_RGBA_ADD: ADD ignores per-pixel
+        # alpha when the destination is opaque, so the "soft falloff" edge
+        # would render as a hard, fully-saturated disc instead of fading.
+        diameter = max(1, int(diameter))
+        scaled = pygame.transform.smoothscale(source, (diameter, diameter))
+        rect = scaled.get_rect(center=center)
+        surface.blit(scaled, rect)
 
-    def _draw_marker_label(self, surface: "pygame.Surface", text: str, x: int, y: int) -> int:
-        """Small red square + bold caps label, used for section headings."""
-        square = pygame.Rect(x, y + 3, 8, 8)
-        pygame.draw.rect(surface, const.SUPREME_RED, square)
-        label = self._font_small.render(text.upper(), True, const.PRIMARY_TEXT_COLOR)
-        surface.blit(label, (x + 14, y))
-        return y + max(label.get_height(), 8)
-
-    def render(self, surface: "pygame.Surface", state: UIState, now: datetime) -> None:
-        surface.fill(const.BACKGROUND_COLOR)
+    def render(self, surface: "pygame.Surface", state: UIState, now: datetime, elapsed: float) -> None:
+        surface.blit(self._background, (0, 0))
         theme = get_theme(state.phase)
+        breathe = 0.5 + 0.5 * math.sin(2 * math.pi * elapsed / theme.breathe_seconds)
 
-        is_dominant_clock = (
+        is_wake_listening = state.phase is UIPhase.STANDBY
+        is_dominant_clock = is_wake_listening or (
             state.phase is UIPhase.IDLE
             and not state.attached
             and not state.partial_transcript
@@ -110,108 +173,141 @@ class PygameRenderer:
             and not state.hermes_tasks
         )
 
-        self._draw_header(surface, theme, show_small_clock=not is_dominant_clock, now=now)
-
         if is_dominant_clock:
-            self._draw_dominant_clock(surface, now)
+            self._draw_idle(surface, now, breathe)
         else:
-            y = const.HEADER_HEIGHT + const.DIVIDER_THICKNESS + 8
-            y = self._draw_stt_panel(surface, state, y)
-            y = self._draw_llm_panel(surface, state, y)
-            y = self._draw_memory_line(surface, state, y)
-            self._draw_hermes_panel(surface, state, y)
+            self._draw_header(surface, theme, now, breathe, active=True)
+            y = const.CONTENT_TOP
+            y = self._draw_conversation_field(surface, state, y)
+            y = self._draw_memory_field(surface, state, y)
+            self._draw_hermes_field(surface, state, y)
+            self._draw_footer(surface)
+            return
 
-        self._draw_branding_strip(surface)
+        self._draw_header(surface, theme, now, breathe, active=False)
+        self._draw_footer(surface)
 
-    def _draw_header(self, surface, theme, *, show_small_clock: bool, now: datetime) -> None:
-        brand_rect = self._draw_tag(surface, "NYRA", const.MARGIN_X, 8, self._font_heavy)
+    def _draw_header(self, surface, theme, now: datetime, breathe: float, *, active: bool) -> None:
+        n = self._font_wordmark.render("n", True, const.INK)
+        yra = self._font_wordmark.render("yra", True, const.INK_DIM)
+        surface.blit(n, (const.MARGIN_X, const.HEADER_TOP))
+        surface.blit(yra, (const.MARGIN_X + n.get_width(), const.HEADER_TOP))
 
-        right_edge = const.SCREEN_WIDTH - const.MARGIN_X
-        if show_small_clock:
-            clock_text = self._font_clock_small.render(now.strftime("%H:%M:%S"), True, const.PRIMARY_TEXT_COLOR)
-            clock_x = right_edge - clock_text.get_width()
-            surface.blit(clock_text, (clock_x, brand_rect.y + (brand_rect.height - clock_text.get_height()) // 2))
-            right_edge = clock_x - 10
+        if not active:
+            return
 
-        self._draw_tag(surface, theme.label, right_edge, 8, self._font_tag, align_right=True)
+        label = self._font_status.render(theme.label.upper(), True, const.INK_DIM)
+        clock_text = self._font_clock_small.render(now.strftime("%H:%M:%S"), True, const.INK_DIM)
 
-        divider_y = const.HEADER_HEIGHT
-        pygame.draw.rect(
-            surface, const.DIVIDER_COLOR, (0, divider_y, const.SCREEN_WIDTH, const.DIVIDER_THICKNESS)
+        right = const.SCREEN_WIDTH - const.MARGIN_X
+        label_x = right - label.get_width()
+        dot_x = label_x - 12
+        clock_x = dot_x - 10 - clock_text.get_width()
+
+        baseline_y = const.HEADER_TOP + 2
+        surface.blit(clock_text, (clock_x, baseline_y))
+        surface.blit(label, (label_x, baseline_y))
+
+        dot_diameter = 5 + 3 * breathe
+        self._blit_glow(surface, self._dot_glow_source, (dot_x, baseline_y + 5), 14 + 10 * breathe)
+        color = _lerp_color(const.EMBER_2, const.EMBER_1, breathe)
+        pygame.draw.circle(surface, color, (dot_x, baseline_y + 5), max(2, int(dot_diameter / 2)))
+
+    def _draw_idle(self, surface, now: datetime, breathe: float) -> None:
+        center = (const.SCREEN_WIDTH // 2, int(const.SCREEN_HEIGHT * const.GLOW_IDLE_CENTER_RATIO))
+        diameter = const.GLOW_IDLE_DIAMETER * (0.94 + 0.12 * breathe)
+        self._blit_glow(surface, self._glow_source, center, diameter)
+
+        time_text = self._font_clock_large.render(now.strftime("%H:%M:%S"), True, const.INK)
+        time_rect = time_text.get_rect(center=center)
+        surface.blit(time_text, time_rect)
+
+        date_text = self._font_date.render(now.strftime("%A, %B %-d").upper(), True, const.INK_FAINT)
+        date_rect = date_text.get_rect(center=(center[0], time_rect.bottom + 18))
+        surface.blit(date_text, date_rect)
+
+    def _draw_field_label(self, surface, text: str, x: int, y: int, *, gradient: bool = False) -> int:
+        if gradient:
+            label = _gradient_text(text, self._font_label, const.EMBER_1, const.EMBER_3)
+        else:
+            label = self._font_label.render(text.upper(), True, const.INK_FAINT)
+        surface.blit(label, (x, y))
+        return y + label.get_height() + 4
+
+    def _draw_conversation_field(self, surface, state: UIState, y: int) -> int:
+        """Shows exactly one side of the conversation at a time — whichever is
+        actively speaking — instead of stacking "You" and "Nyra" together."""
+        if state.phase is UIPhase.SPEAKING:
+            label, text, is_final = "Nyra", state.llm_text, state.is_final_llm
+            gradient = True
+        else:
+            label, text, is_final = "You", state.partial_transcript, state.is_final_transcript
+            gradient = False
+
+        y = self._draw_field_label(surface, label, const.MARGIN_X, y, gradient=gradient)
+        color = const.INK if is_final else const.INK_DIM
+        lines = _wrap_text(
+            text, self._font_body, const.SCREEN_WIDTH - 2 * const.MARGIN_X, max_lines=3
         )
+        for i, line in enumerate(lines):
+            rendered = self._font_body.render(line, True, color)
+            surface.blit(rendered, (const.MARGIN_X, y + i * const.CONVERSATION_LINE_HEIGHT))
+        return y + len(lines) * const.CONVERSATION_LINE_HEIGHT + const.FIELD_GAP
 
-    def _draw_dominant_clock(self, surface, now: datetime) -> None:
-        text = self._font_clock_large.render(now.strftime("%H:%M:%S"), True, const.PRIMARY_TEXT_COLOR)
-        body_top = const.HEADER_HEIGHT + const.DIVIDER_THICKNESS
-        body_bottom = const.SCREEN_HEIGHT - const.BRANDING_STRIP_HEIGHT
-        top = body_top + (body_bottom - body_top) // 2 - text.get_height() // 2
-        text_x = (const.SCREEN_WIDTH - text.get_width()) // 2
-        surface.blit(text, (text_x, top))
-
-        bar_width = text.get_width() // 2
-        bar_y = top + text.get_height() + 10
-        pygame.draw.rect(
-            surface,
-            const.SUPREME_RED,
-            ((const.SCREEN_WIDTH - bar_width) // 2, bar_y, bar_width, const.DIVIDER_THICKNESS),
-        )
-
-    def _draw_stt_panel(self, surface, state: UIState, y: int) -> int:
-        y = self._draw_marker_label(surface, "You", const.MARGIN_X, y)
-        color = const.PRIMARY_TEXT_COLOR if state.is_final_transcript else const.SECONDARY_TEXT_COLOR
-        for i, line in enumerate(_wrap_text(state.partial_transcript, self._font_body, const.SCREEN_WIDTH - 2 * const.MARGIN_X)):
-            text = self._font_body.render(line, True, color)
-            surface.blit(text, (const.MARGIN_X, y + 4 + i * 18))
-        return y + const.STT_PANEL_HEIGHT - 16
-
-    def _draw_llm_panel(self, surface, state: UIState, y: int) -> int:
-        y = self._draw_marker_label(surface, "Reply", const.MARGIN_X, y)
-        color = const.PRIMARY_TEXT_COLOR if state.is_final_llm else const.SECONDARY_TEXT_COLOR
-        for i, line in enumerate(_wrap_text(state.llm_text, self._font_body, const.SCREEN_WIDTH - 2 * const.MARGIN_X)):
-            text = self._font_body.render(line, True, color)
-            surface.blit(text, (const.MARGIN_X, y + 4 + i * 18))
-        return y + const.LLM_PANEL_HEIGHT - 16
-
-    def _draw_memory_line(self, surface, state: UIState, y: int) -> int:
+    def _draw_memory_field(self, surface, state: UIState, y: int) -> int:
         if state.memory_status == "recalling":
-            text = "MEMORY: RECALLING…"
+            text = "Memory — recalling…"
         elif state.memory_status == "done":
             count = state.memory_match_count or 0
-            noun = "MATCH" if count == 1 else "MATCHES"
-            text = f"MEMORY: {count} {noun}" if count else "MEMORY: NO MATCHES"
+            noun = "match" if count == 1 else "matches"
+            text = f"Memory — {count} {noun} recalled" if count else "Memory — no matches"
         else:
             text = ""
         if text:
-            rendered = self._font_small.render(text, True, const.MUTED_TEXT_COLOR)
-            surface.blit(rendered, (const.MARGIN_X, y + 2))
-        return y + const.MEMORY_LINE_HEIGHT
+            rendered = self._font_mono.render(text, True, const.INK_FAINT)
+            surface.blit(rendered, (const.MARGIN_X, y))
+        return y + 18 + const.FIELD_GAP // 2
 
-    def _draw_hermes_panel(self, surface, state: UIState, y: int) -> int:
-        y = self._draw_marker_label(surface, "Hermes", const.MARGIN_X, y)
+    def _draw_hermes_field(self, surface, state: UIState, y: int) -> int:
+        y = self._draw_field_label(surface, "Hermes", const.MARGIN_X, y)
         tasks = state.hermes_tasks
+        row_width = const.SCREEN_WIDTH - 2 * const.MARGIN_X
+
         if not tasks:
-            text = self._font_small.render("NO BACKGROUND TASKS", True, const.MUTED_TEXT_COLOR)
-            surface.blit(text, (const.MARGIN_X, y + 4))
-            return y + const.HERMES_PANEL_HEIGHT
+            text = self._font_mono.render("No background tasks", True, const.INK_FAINT)
+            surface.blit(text, (const.MARGIN_X, y))
+            return y + const.HERMES_ROW_HEIGHT
 
         visible = tasks[: const.HERMES_MAX_VISIBLE_TASKS]
         for i, task in enumerate(visible):
-            tokens = f"{task.tokens_used}TOK" if task.tokens_used is not None else "—"
-            line = f"{task.label.upper()}  {task.status.upper()}  {int(task.elapsed_seconds)}S  {tokens}"
-            rendered = self._font_small.render(line, True, const.PRIMARY_TEXT_COLOR)
-            surface.blit(rendered, (const.MARGIN_X, y + 4 + i * 16))
+            row_y = y + i * const.HERMES_ROW_HEIGHT
+            if i > 0:
+                pygame.draw.line(
+                    surface, const.HAIRLINE_COLOR,
+                    (const.MARGIN_X, row_y - 4), (const.MARGIN_X + row_width, row_y - 4),
+                )
+            left = self._font_body.render(task.label, True, const.INK)
+            surface.blit(left, (const.MARGIN_X, row_y))
+            status = self._font_mono.render(task.status, True, const.INK_FAINT)
+            surface.blit(status, (const.MARGIN_X + left.get_width() + 10, row_y + 2))
+
+            tokens = f"{task.tokens_used} tok" if task.tokens_used is not None else "—"
+            meta = f"{int(task.elapsed_seconds)}s · {tokens}"
+            meta_text = self._font_mono.render(meta, True, const.INK_DIM)
+            surface.blit(meta_text, (const.MARGIN_X + row_width - meta_text.get_width(), row_y + 1))
 
         remaining = len(tasks) - len(visible)
+        end_y = y + len(visible) * const.HERMES_ROW_HEIGHT
         if remaining > 0:
-            more = self._font_small.render(f"+{remaining} MORE", True, const.MUTED_TEXT_COLOR)
-            surface.blit(more, (const.MARGIN_X, y + 4 + len(visible) * 16))
+            more = self._font_mono.render(f"+{remaining} more", True, const.INK_FAINT)
+            surface.blit(more, (const.MARGIN_X, end_y))
+            end_y += const.HERMES_ROW_HEIGHT
+        return end_y
 
-        return y + const.HERMES_PANEL_HEIGHT
-
-    def _draw_branding_strip(self, surface) -> None:
-        y = const.SCREEN_HEIGHT - const.BRANDING_STRIP_HEIGHT
-        pygame.draw.rect(surface, const.SUPREME_RED, (0, y, const.SCREEN_WIDTH, const.DIVIDER_THICKNESS))
-        center_y = y + const.DIVIDER_THICKNESS + (const.BRANDING_STRIP_HEIGHT - const.DIVIDER_THICKNESS) // 2
+    def _draw_footer(self, surface) -> None:
+        y = const.SCREEN_HEIGHT - const.FOOTER_HEIGHT
+        pygame.draw.line(surface, const.HAIRLINE_COLOR, (0, y), (const.SCREEN_WIDTH, y), 1)
+        center_y = y + (const.FOOTER_HEIGHT // 2)
 
         cognee = self._logos.get("cognee")
         if cognee is not None:

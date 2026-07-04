@@ -132,6 +132,7 @@ class UIStateServer:
 class UIClientProtocol(Protocol):
     def publish_hello(self, room_name: str | None) -> None: ...
     def publish_phase(self, agent_state: str) -> None: ...
+    def publish_standby(self) -> None: ...
     def publish_stt(self, text: str, is_final: bool) -> None: ...
     def publish_llm(self, text: str, is_final: bool = True) -> None: ...
     def publish_memory_status(self, status: str, match_count: int | None = None) -> None: ...
@@ -146,6 +147,9 @@ class NullUIClient:
         return None
 
     def publish_phase(self, agent_state: str) -> None:
+        return None
+
+    def publish_standby(self) -> None:
         return None
 
     def publish_stt(self, text: str, is_final: bool) -> None:
@@ -193,6 +197,9 @@ class UIClient:
 
     def publish_phase(self, agent_state: str) -> None:
         self._enqueue(phase_event(agent_state))
+
+    def publish_standby(self) -> None:
+        self._enqueue(phase_event("standby"))
 
     def publish_stt(self, text: str, is_final: bool) -> None:
         self._enqueue(stt_event(text, is_final))

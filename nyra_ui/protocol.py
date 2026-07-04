@@ -65,14 +65,17 @@ def apply_event(state: UIState, event: dict[str, Any]) -> UIState:
         return state.with_attached(False)
 
     if event_type == "stt":
-        return state.with_transcript(str(event.get("text", "")), bool(event.get("is_final", False)))
+        # `event.get(key, default)` only falls back when the key is absent —
+        # an explicit JSON null still comes through as None, so coalesce with
+        # `or` too, otherwise str(None) would render the literal word "None".
+        return state.with_transcript(str(event.get("text") or ""), bool(event.get("is_final", False)))
 
     if event_type == "llm":
-        return state.with_llm_output(str(event.get("text", "")), bool(event.get("is_final", True)))
+        return state.with_llm_output(str(event.get("text") or ""), bool(event.get("is_final", True)))
 
     if event_type == "memory":
         return state.with_memory_status(
-            str(event.get("status", "idle")), event.get("match_count")
+            str(event.get("status") or "idle"), event.get("match_count")
         )
 
     if event_type == "hermes_tasks":

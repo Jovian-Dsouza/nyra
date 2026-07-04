@@ -14,6 +14,7 @@ from enum import Enum
 
 class UIPhase(Enum):
     IDLE = "idle"
+    STANDBY = "standby"
     LISTENING = "listening"
     THINKING = "thinking"
     TOOL_RUNNING = "tool_running"
@@ -24,13 +25,14 @@ class UIPhase(Enum):
 AGENT_STATE_TO_PHASE = {
     "initializing": UIPhase.IDLE,
     "idle": UIPhase.IDLE,
+    "standby": UIPhase.STANDBY,
     "listening": UIPhase.LISTENING,
     "thinking": UIPhase.THINKING,
     "speaking": UIPhase.SPEAKING,
 }
 
-_PHASES_THAT_CLEAR_TRANSCRIPT = frozenset({UIPhase.IDLE, UIPhase.SPEAKING})
-_PHASES_THAT_CLEAR_LLM_TEXT = frozenset({UIPhase.IDLE, UIPhase.LISTENING})
+_PHASES_THAT_CLEAR_TRANSCRIPT = frozenset({UIPhase.IDLE, UIPhase.STANDBY, UIPhase.SPEAKING})
+_PHASES_THAT_CLEAR_LLM_TEXT = frozenset({UIPhase.IDLE, UIPhase.STANDBY, UIPhase.LISTENING})
 
 
 @dataclass(frozen=True)

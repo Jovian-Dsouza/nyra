@@ -34,6 +34,7 @@ class UIApp:
         screen = pygame.display.set_mode((const.SCREEN_WIDTH, const.SCREEN_HEIGHT))
         renderer = PygameRenderer()
         clock = pygame.time.Clock()
+        start = pygame.time.get_ticks()
 
         running = True
         while running:
@@ -41,7 +42,8 @@ class UIApp:
                 if event.type == pygame.QUIT:
                     running = False
 
-            renderer.render(screen, self._store.snapshot(), datetime.now())
+            elapsed = (pygame.time.get_ticks() - start) / 1000.0
+            renderer.render(screen, self._store.snapshot(), datetime.now(), elapsed)
             pygame.display.flip()
             clock.tick(const.TARGET_FPS)
 

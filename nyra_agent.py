@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+from collections.abc import AsyncIterable
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -7,8 +9,8 @@ from livekit import agents
 from livekit.agents import (
     Agent,
     AgentSession,
-    JobContext,
     JobProcess,
+    ModelSettings,
     RoomOutputOptions,
     RunContext,
     WorkerOptions,
@@ -40,6 +42,7 @@ from nyra_speech import (
 )
 from nyra_ui.bridge import get_ui_client
 from nyra_ui.launcher import start_ui_process, stop_ui_process
+from nyra_wakeword import WakeWordController, load_wakeword_settings
 
 load_dotenv(".env")
 
@@ -50,6 +53,14 @@ MEMORY_CONTEXT_ID = "nyra_memory_context"
 
 HERMES_INSTRUCTIONS = """
 You are Nyra, a real-time voice assistant. Keep conversation flowing naturally.
+
+Wake word / standby:
+- The spoken wake word activates you from passive listening. This is separate from
+  background Hermes task delegation (delegate_to_hermes).
+- When the conversation is clearly finished — goodbye, "that's all", task fully resolved
+  with no follow-up expected — call enter_standby before your closing remark.
+- Do not call enter_standby mid-task or while the user may still respond.
+- After standby, the user re-engages by saying the wake word again.
 
 Routing:
 - Handle inline: greetings, chitchat, datetime, quick facts, clarifying questions.
@@ -97,6 +108,7 @@ class Assistant(Agent):
         memory_settings: MemorySettings,
         hermes: HermesTaskManager | None = None,
         ui_client=None,
+        wakeword: WakeWordController | None = None,
     ):
         super().__init__(
             instructions=f"""You are a helpful and friendly voice AI assistant named Nyra.
@@ -110,6 +122,20 @@ class Assistant(Agent):
         self._last_injected_memory = ""
         self._hermes = hermes
         self._ui = ui_client
+        self._wakeword = wakeword
+
+    @function_tool
+    async def enter_standby(self, context: RunContext) -> str:
+        """Return to passive wake-word listening when the conversation is clearly finished.
+
+        Call after the user says goodbye, "that's all", or when their request is fully
+        resolved and no follow-up is expected. Do not call mid-task.
+        """
+        if self._wakeword is None or not self._wakeword.enabled:
+            return "Standby mode is not enabled in this session."
+        await context.wait_for_playout()
+        await self._wakeword.enter_passive()
+        return "Returning to standby. Say the wake word when you need me again."
 
     @function_tool
     async def get_current_date_and_time(self, context: RunContext) -> str:
@@ -184,8 +210,36 @@ class Assistant(Agent):
             if results_text:
                 upsert_hermes_results_message(turn_ctx, results_text)
 
+    async def transcription_node(
+        self, text: AsyncIterable[str], model_settings: ModelSettings
+    ) -> AsyncIterable[str]:
+        """Mirror the agent's live spoken text to the UI as it's generated.
+
+        This is the same text stream the room transcription is built from
+        (RoomOutputOptions(transcription_enabled=True)), so it fires for
+        every utterance the agent speaks — say(), generate_reply(), fillers,
+        the greeting — regardless of whether that turn was added to chat
+        history. Deltas pass through unchanged; only the accumulated text is
+        mirrored to the UI, live, so it reflects what's being spoken *now*.
+        """
+        buffer = ""
+        mirror_ui = (
+            self._ui is not None
+            and (self._wakeword is None or not self._wakeword.enabled or self._wakeword.is_active)
+        )
+        async for delta in text:
+            buffer += delta
+            if mirror_ui:
+                self._ui.publish_llm(buffer, is_final=False)
+            yield delta
+        if mirror_ui and buffer:
+            self._ui.publish_llm(buffer, is_final=True)
+
     async def on_enter(self):
         logger.info("Agent session started")
+        if self._wakeword is not None and self._wakeword.defer_greeting:
+            logger.info("[wakeword] deferring greeting until wake word activation")
+            return
         handle = self.session.say(GREETING_TEXT, add_to_chat_ctx=False)
         await handle
 
@@ -208,6 +262,7 @@ async def entrypoint(ctx: agents.JobContext):
 
     async def _shutdown() -> None:
         hermes_announcer.stop()
+        await wakeword.shutdown()
         await hermes_manager.shutdown()
         await shutdown_cognee(memory_settings)
         await ui.aclose()
@@ -241,29 +296,46 @@ async def entrypoint(ctx: agents.JobContext):
         delay=filler_delay,
         min_interval=filler_min_interval,
     )
-    hermes_announcer = HermesResultAnnouncer(session, hermes_manager)
+    wakeword_settings = load_wakeword_settings()
+    wakeword = WakeWordController(wakeword_settings, ui_client=ui)
+    hermes_announcer = HermesResultAnnouncer(session, hermes_manager, wakeword=wakeword)
     hermes_announcer.start()
+    wakeword.start(session)
+    if wakeword.enabled:
+        ui.publish_standby()
 
-    agent = Assistant(memory_settings=memory_settings, hermes=hermes_manager, ui_client=ui)
+    agent = Assistant(
+        memory_settings=memory_settings,
+        hermes=hermes_manager,
+        ui_client=ui,
+        wakeword=wakeword,
+    )
 
     @session.on("agent_state_changed")
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
         hermes_announcer.on_state_changed(ev.new_state)
-        ui.publish_phase(ev.new_state)
+        if wakeword.is_active or not wakeword.enabled:
+            ui.publish_phase(ev.new_state)
         if ev.new_state == "thinking":
             waiting_speech.start()
         elif ev.old_state == "thinking":
             waiting_speech.stop()
 
+    @session.on("user_state_changed")
+    def on_user_state_changed(ev):
+        if (
+            wakeword.enabled
+            and wakeword.is_active
+            and ev.new_state == "away"
+            and ev.old_state != "away"
+        ):
+            asyncio.create_task(wakeword.enter_passive())
+
     @session.on("user_input_transcribed")
     def on_user_input_transcribed(ev):
-        ui.publish_stt(ev.transcript, ev.is_final)
-
-    @session.on("conversation_item_added")
-    def on_conversation_item_added(ev):
-        if ev.item.role == "assistant":
-            ui.publish_llm(ev.item.text_content, is_final=True)
+        if wakeword.is_active or not wakeword.enabled:
+            ui.publish_stt(ev.transcript, ev.is_final)
 
     await session.start(
         room=ctx.room,

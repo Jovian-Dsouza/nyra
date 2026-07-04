@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from livekit.agents import AgentSession
@@ -22,9 +22,12 @@ class HermesResultAnnouncer:
         self,
         session: "AgentSession",
         task_manager: "HermesTaskManager",
+        *,
+        wakeword: Any | None = None,
     ) -> None:
         self._session = session
         self._task_manager = task_manager
+        self._wakeword = wakeword
         self._agent_state = "initializing"
         self._pending: list[str] = []
         self._pending_since: float | None = None
@@ -96,6 +99,9 @@ class HermesResultAnnouncer:
 
         self._delivering = True
         try:
+            if self._wakeword is not None and self._wakeword.is_passive:
+                await self._wakeword.enter_active(reason="hermes_result")
+
             if len(self._pending) == 1:
                 message = self._pending[0]
             else:
