@@ -50,6 +50,8 @@ class WakeWordController:
         self._install_task: asyncio.Task[None] | None = None
         self._suppress_stt = False
         self._stt_resume_task: asyncio.Task[None] | None = None
+        self._agent_state = "initializing"
+        self._pending_passive = False
         if echo_tail_seconds is None:
             echo_tail_seconds = float(
                 os.environ.get("NYRA_ECHO_TAIL_SECONDS", "0.35")
@@ -86,6 +88,8 @@ class WakeWordController:
 
     def on_agent_state_changed(self, new_state: str, old_state: str) -> None:
         """Block mic→STT while the agent speaks to prevent speaker echo loops."""
+        self._agent_state = new_state
+
         if new_state in ("speaking", "thinking"):
             if self._stt_resume_task is not None:
                 self._stt_resume_task.cancel()
@@ -100,6 +104,8 @@ class WakeWordController:
             return
 
         if old_state in ("speaking", "thinking") and new_state in ("listening", "idle"):
+            self._schedule_deferred_passive()
+
             if self._echo_tail_seconds <= 0:
                 self._suppress_stt = False
                 self._sync_stt_forward()
@@ -120,6 +126,14 @@ class WakeWordController:
                 _resume(),
                 name="WakeWordController._resume_stt_after_echo_tail",
             )
+
+    def _schedule_deferred_passive(self) -> None:
+        if not self._pending_passive:
+            return
+        asyncio.create_task(
+            self.enter_passive(),
+            name="WakeWordController._deferred_enter_passive",
+        )
 
     def _sync_stt_forward(self) -> None:
         if self._gate is None:
@@ -165,6 +179,7 @@ class WakeWordController:
             if self._mode is InteractionMode.ACTIVE:
                 return
 
+            self._pending_passive = False
             self._mode = InteractionMode.ACTIVE
             self._sync_stt_forward()
             if self._session is not None:
@@ -199,6 +214,15 @@ class WakeWordController:
         if not self.enabled:
             return
 
+        if self._agent_state in ("speaking", "thinking"):
+            self._pending_passive = True
+            logger.debug(
+                "[wakeword] deferring standby until agent finishes %s",
+                self._agent_state,
+            )
+            return
+
+        self._pending_passive = False
         self._mode = InteractionMode.PASSIVE
         self._suppress_stt = False
         if self._stt_resume_task is not None:

@@ -166,6 +166,77 @@ async def test_echo_gate_when_wakeword_disabled():
 
 
 @pytest.mark.asyncio
+async def test_enter_passive_deferred_while_speaking():
+    session = MagicMock()
+    session.input.set_audio_enabled = MagicMock()
+    session.clear_user_turn = MagicMock()
+
+    ui = MagicMock()
+    controller = WakeWordController(_settings(), ui_client=ui)
+    controller.attach_session(session)
+    controller._mode = InteractionMode.ACTIVE
+    controller._agent_state = "speaking"
+    controller._gate = MagicMock()
+    controller._gate.set_forward_enabled = MagicMock()
+
+    await controller.enter_passive()
+
+    assert controller.is_active
+    assert controller._pending_passive
+    ui.publish_standby.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_enter_passive_runs_after_speaking_ends():
+    session = MagicMock()
+    session.input.set_audio_enabled = MagicMock()
+    session.clear_user_turn = MagicMock()
+
+    ui = MagicMock()
+    controller = WakeWordController(_settings(), ui_client=ui, echo_tail_seconds=0.0)
+    controller.attach_session(session)
+    controller._mode = InteractionMode.ACTIVE
+    controller._agent_state = "speaking"
+    controller._gate = MagicMock()
+    controller._gate.set_forward_enabled = MagicMock()
+
+    await controller.enter_passive()
+    assert controller._pending_passive
+
+    controller.on_agent_state_changed("listening", "speaking")
+    await asyncio.sleep(0)
+
+    assert controller.is_passive
+    ui.publish_standby.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_enter_active_cancels_deferred_passive():
+    session = MagicMock()
+    session.input.set_audio_enabled = MagicMock()
+    session.generate_reply = MagicMock(
+        return_value=asyncio.get_running_loop().create_future()
+    )
+    session.generate_reply.return_value.set_result(None)
+    session.clear_user_turn = MagicMock()
+
+    controller = WakeWordController(_settings(), ui_client=MagicMock())
+    controller.attach_session(session)
+    controller._mode = InteractionMode.PASSIVE
+    controller._agent_state = "speaking"
+    controller._gate = MagicMock()
+    controller._gate.set_forward_enabled = MagicMock()
+
+    await controller.enter_passive()
+    assert controller._pending_passive
+
+    await controller.enter_active(reason="wake_word", model_name="alexa", score=0.9)
+
+    assert not controller._pending_passive
+    assert controller.is_active
+
+
+@pytest.mark.asyncio
 async def test_disabled_controller_stays_active():
     session = MagicMock()
     ui = MagicMock()
