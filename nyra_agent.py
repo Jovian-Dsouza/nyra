@@ -26,6 +26,12 @@ from cognee_memory import (
     recall_for_transcript,
     shutdown_cognee,
 )
+from nyra_speech import (
+    GREETING_TEXT,
+    WaitingSpeechController,
+    load_filler_settings,
+    load_min_interruption_words,
+)
 
 load_dotenv(".env")
 
@@ -93,9 +99,8 @@ class Assistant(Agent):
 
     async def on_enter(self):
         logger.info("Agent session started")
-        await self.session.generate_reply(
-            instructions="Greet the user warmly and ask how you can help them today."
-        )
+        handle = self.session.say(GREETING_TEXT, add_to_chat_ctx=False)
+        await handle
 
     async def on_exit(self):
         logger.info("Agent session ended")
@@ -113,7 +118,8 @@ async def entrypoint(ctx: agents.JobContext):
     ctx.add_shutdown_callback(_shutdown)
 
     vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
-    agent = Assistant(memory_settings=memory_settings)
+    filler_delay, filler_min_interval = load_filler_settings()
+    min_interruption_words = load_min_interruption_words()
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -130,11 +136,23 @@ async def entrypoint(ctx: agents.JobContext):
         ),
         vad=vad,
         turn_detection=MultilingualModel(),
+        min_interruption_words=min_interruption_words,
     )
+
+    waiting_speech = WaitingSpeechController(
+        session,
+        delay=filler_delay,
+        min_interval=filler_min_interval,
+    )
+    agent = Assistant(memory_settings=memory_settings)
 
     @session.on("agent_state_changed")
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
+        if ev.new_state == "thinking":
+            waiting_speech.start()
+        elif ev.old_state == "thinking":
+            waiting_speech.stop()
 
     await session.start(
         room=ctx.room,
