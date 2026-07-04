@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,6 +33,22 @@ WAITING_PHRASES = [
     "I'm on the case — won't be a moment.",
     "Just lining things up for you.",
 ]
+
+
+DEFAULT_TTS_VOICE = "nova"
+DEFAULT_TTS_SPEED = 1.05
+
+
+@dataclass(frozen=True)
+class TtsSettings:
+    voice: str
+    speed: float
+
+
+def load_tts_settings() -> TtsSettings:
+    voice = os.environ.get("NYRA_TTS_VOICE", DEFAULT_TTS_VOICE).strip().lower()
+    speed = float(os.environ.get("NYRA_TTS_SPEED", str(DEFAULT_TTS_SPEED)))
+    return TtsSettings(voice=voice, speed=speed)
 
 
 def load_filler_settings() -> tuple[float, float]:

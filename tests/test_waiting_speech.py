@@ -4,11 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nyra_speech import (
+    DEFAULT_TTS_SPEED,
+    DEFAULT_TTS_VOICE,
     GREETING_TEXT,
     WAITING_PHRASES,
     WaitingSpeechController,
     load_filler_settings,
     load_min_interruption_words,
+    load_tts_settings,
 )
 
 
@@ -47,6 +50,22 @@ def test_load_min_interruption_words_defaults(monkeypatch):
 def test_load_min_interruption_words_from_env(monkeypatch):
     monkeypatch.setenv("NYRA_MIN_INTERRUPTION_WORDS", "3")
     assert load_min_interruption_words() == 3
+
+
+def test_load_tts_settings_defaults(monkeypatch):
+    monkeypatch.delenv("NYRA_TTS_VOICE", raising=False)
+    monkeypatch.delenv("NYRA_TTS_SPEED", raising=False)
+    settings = load_tts_settings()
+    assert settings.voice == DEFAULT_TTS_VOICE
+    assert settings.speed == DEFAULT_TTS_SPEED
+
+
+def test_load_tts_settings_from_env(monkeypatch):
+    monkeypatch.setenv("NYRA_TTS_VOICE", "shimmer")
+    monkeypatch.setenv("NYRA_TTS_SPEED", "1.0")
+    settings = load_tts_settings()
+    assert settings.voice == "shimmer"
+    assert settings.speed == 1.0
 
 
 def test_next_phrase_from_pool():

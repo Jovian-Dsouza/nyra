@@ -39,6 +39,7 @@ from nyra_speech import (
     WaitingSpeechController,
     load_filler_settings,
     load_min_interruption_words,
+    load_tts_settings,
 )
 from nyra_ui.bridge import get_ui_client
 from nyra_ui.launcher import start_ui_process, stop_ui_process
@@ -287,6 +288,7 @@ async def entrypoint(ctx: agents.JobContext):
     vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
     filler_delay, filler_min_interval = load_filler_settings()
     min_interruption_words = load_min_interruption_words()
+    tts_settings = load_tts_settings()
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -298,8 +300,8 @@ async def entrypoint(ctx: agents.JobContext):
             temperature=0.7,
         ),
         tts=openai.TTS(
-            voice="echo",
-            speed=1.0,
+            voice=tts_settings.voice,
+            speed=tts_settings.speed,
         ),
         vad=vad,
         turn_detection=MultilingualModel(),
