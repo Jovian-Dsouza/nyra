@@ -103,6 +103,38 @@ def _build_glow_sprite(diameter: int) -> "pygame.Surface":
     return surface
 
 
+def _crop_to_content(image: "pygame.Surface") -> "pygame.Surface":
+    """Trim solid padding around a logo so scaling targets the mark, not the canvas."""
+    width, height = image.get_size()
+    min_x, min_y, max_x, max_y = width, height, 0, 0
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, _alpha = image.get_at((x, y))
+            if red + green + blue > 30:
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x)
+                max_y = max(max_y, y)
+    if min_x >= max_x or min_y >= max_y:
+        return image
+    crop = pygame.Rect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+    return image.subsurface(crop).copy()
+
+
+def _tint_logo(image: "pygame.Surface", color: tuple[int, int, int]) -> "pygame.Surface":
+    """Recolor a light-on-dark logo using pixel luminance as alpha."""
+    width, height = image.get_size()
+    tinted = pygame.Surface((width, height), pygame.SRCALPHA)
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = image.get_at((x, y))
+            luminance = max(red, green, blue)
+            if luminance > 30:
+                pixel_alpha = int(luminance * alpha / 255)
+                tinted.set_at((x, y), (*color, pixel_alpha))
+    return tinted
+
+
 def _gradient_text(text: str, font: "pygame.font.Font", start: tuple, end: tuple) -> "pygame.Surface":
     """Renders text filled with a horizontal amber->crimson gradient."""
     mask = font.render(text, True, (255, 255, 255))
@@ -119,7 +151,6 @@ def _gradient_text(text: str, font: "pygame.font.Font", start: tuple, end: tuple
 class PygameRenderer:
     def __init__(self) -> None:
         pygame.font.init()
-        self._font_wordmark = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_WORDMARK, bold=True)
         self._font_status = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_STATUS, bold=True)
         self._font_label = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_LABEL, bold=True)
         self._font_body = pygame.font.SysFont(const.FONT_NAME_SANS, const.FONT_SIZE_BODY)
@@ -131,7 +162,20 @@ class PygameRenderer:
         self._background = _build_background(const.SCREEN_WIDTH, const.SCREEN_HEIGHT)
         self._glow_source = _build_glow_sprite(360)
         self._dot_glow_source = _build_glow_sprite(120)
+        self._wordmark = self._load_wordmark()
         self._logos = self._load_logos()
+
+    def _load_wordmark(self) -> "pygame.Surface | None":
+        assets_dir = __file__.rsplit("/", 1)[0] + "/assets"
+        path = f"{assets_dir}/nyra_logo.png"
+        try:
+            image = pygame.image.load(path).convert_alpha()
+            cropped = _crop_to_content(image)
+            scale = const.WORDMARK_HEIGHT / cropped.get_height()
+            size = (max(1, int(cropped.get_width() * scale)), const.WORDMARK_HEIGHT)
+            return pygame.transform.smoothscale(cropped, size)
+        except (FileNotFoundError, pygame.error):
+            return None
 
     def _load_logos(self) -> dict[str, "pygame.Surface"]:
         logos = {}
@@ -139,13 +183,11 @@ class PygameRenderer:
         for name, filename in (("cognee", "cognee_logo.png"), ("hermes", "hermes_logo.png")):
             path = f"{assets_dir}/{filename}"
             try:
-                image = pygame.image.load(path).convert_alpha()
+                image = _crop_to_content(pygame.image.load(path).convert_alpha())
                 scale = const.LOGO_HEIGHT / image.get_height()
                 size = (max(1, int(image.get_width() * scale)), const.LOGO_HEIGHT)
                 scaled = pygame.transform.smoothscale(image, size)
-                gray = pygame.transform.grayscale(scaled)
-                gray.set_alpha(const.LOGO_ALPHA)
-                logos[name] = gray
+                logos[name] = _tint_logo(scaled, const.INK_DIM)
             except (FileNotFoundError, pygame.error):
                 logos[name] = None
         return logos
@@ -188,10 +230,8 @@ class PygameRenderer:
         self._draw_footer(surface)
 
     def _draw_header(self, surface, theme, now: datetime, breathe: float, *, active: bool) -> None:
-        n = self._font_wordmark.render("n", True, const.INK)
-        yra = self._font_wordmark.render("yra", True, const.INK_DIM)
-        surface.blit(n, (const.MARGIN_X, const.HEADER_TOP))
-        surface.blit(yra, (const.MARGIN_X + n.get_width(), const.HEADER_TOP))
+        if self._wordmark is not None:
+            surface.blit(self._wordmark, (const.MARGIN_X, const.HEADER_TOP))
 
         if not active:
             return
@@ -247,11 +287,21 @@ class PygameRenderer:
             label, text, is_final = "Nyra", state.llm_text, state.is_final_llm
             gradient = True
         else:
-            label, text, is_final = "You", state.partial_transcript, state.is_final_transcript
+            label = "You:"
+            text = state.partial_transcript
+            is_final = state.is_final_transcript
             gradient = False
+            placeholder = (
+                state.phase is UIPhase.LISTENING
+                and not text.strip()
+            )
 
         y = self._draw_field_label(surface, label, const.MARGIN_X, y, gradient=gradient)
-        color = const.INK if is_final else const.INK_DIM
+        if placeholder:
+            color = const.INK_FAINT
+            text = const.LISTENING_PROMPT
+        else:
+            color = const.INK if is_final else const.INK_DIM
         lines = _wrap_text(
             text, self._font_body, const.SCREEN_WIDTH - 2 * const.MARGIN_X, max_lines=3
         )
@@ -275,14 +325,12 @@ class PygameRenderer:
         return y + 18 + const.FIELD_GAP // 2
 
     def _draw_hermes_field(self, surface, state: UIState, y: int) -> int:
-        y = self._draw_field_label(surface, "Hermes", const.MARGIN_X, y)
         tasks = state.hermes_tasks
-        row_width = const.SCREEN_WIDTH - 2 * const.MARGIN_X
-
         if not tasks:
-            text = self._font_mono.render("No background tasks", True, const.INK_FAINT)
-            surface.blit(text, (const.MARGIN_X, y))
-            return y + const.HERMES_ROW_HEIGHT
+            return y
+
+        y = self._draw_field_label(surface, "Hermes", const.MARGIN_X, y)
+        row_width = const.SCREEN_WIDTH - 2 * const.MARGIN_X
 
         visible = tasks[: const.HERMES_MAX_VISIBLE_TASKS]
         for i, task in enumerate(visible):

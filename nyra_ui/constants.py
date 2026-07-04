@@ -28,7 +28,7 @@ EMBER_3 = (255, 61, 104)
 FONT_NAME_MONO = "Menlo,Consolas,Courier New"
 FONT_NAME_SANS = "Avenir Next,Helvetica Neue,Helvetica"
 
-FONT_SIZE_WORDMARK = 15
+WORDMARK_HEIGHT = 18
 FONT_SIZE_STATUS = 11
 FONT_SIZE_LABEL = 10
 FONT_SIZE_BODY = 15
@@ -43,9 +43,11 @@ FIELD_GAP = 14
 CONVERSATION_LINE_HEIGHT = 18
 HERMES_ROW_HEIGHT = 22
 HERMES_MAX_VISIBLE_TASKS = 3
-FOOTER_HEIGHT = 36
-LOGO_HEIGHT = 12
-LOGO_ALPHA = 165
+FOOTER_HEIGHT = 56
+LOGO_HEIGHT = 36
+
+LISTENING_PROMPT = "Speak something to start working."
+"""Shown under the You field while Nyra is listening and no speech has arrived yet."""
 
 GLOW_IDLE_DIAMETER = 260
 GLOW_IDLE_CENTER_RATIO = 0.40
