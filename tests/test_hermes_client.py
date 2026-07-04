@@ -17,6 +17,7 @@ def _settings() -> HermesSettings:
         request_timeout=5.0,
         summarize_model="gpt-4.1-mini",
         openai_api_key="sk-test",
+        standby_after_seconds=45.0,
     )
 
 

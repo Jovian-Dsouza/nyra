@@ -12,7 +12,7 @@ from datetime import datetime
 import pygame
 
 from nyra_ui import constants as const
-from nyra_ui.state import UIPhase, UIState
+from nyra_ui.state import UIPhase, UIState, _has_active_hermes_tasks
 from nyra_ui.theme import get_theme
 
 
@@ -238,6 +238,12 @@ class PygameRenderer:
         """Shows exactly one side of the conversation at a time — whichever is
         actively speaking — instead of stacking "You" and "Nyra" together."""
         if state.phase is UIPhase.SPEAKING:
+            label, text, is_final = "Nyra", state.llm_text, state.is_final_llm
+            gradient = True
+        elif state.partial_transcript:
+            label, text, is_final = "You", state.partial_transcript, state.is_final_transcript
+            gradient = False
+        elif state.llm_text and _has_active_hermes_tasks(state):
             label, text, is_final = "Nyra", state.llm_text, state.is_final_llm
             gradient = True
         else:

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 TaskStatus = Literal["queued", "running", "completed", "failed", "cancelled", "waiting_approval"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_ACTIVE_HERMES_STATUSES = frozenset({"queued", "running", "waiting_approval"})
 
 HERMES_RESULTS_CONTEXT_ID = "nyra_hermes_results"
 MAX_CONTEXT_TASKS = 5
@@ -50,7 +51,14 @@ class HermesTask:
 
 
 class HermesTaskManager:
-    def __init__(self, settings: HermesSettings, *, room_name: str, ui_client=None) -> None:
+    def __init__(
+        self,
+        settings: HermesSettings,
+        *,
+        room_name: str,
+        ui_client=None,
+        on_long_running=None,
+    ) -> None:
         self._settings = settings
         self._room_name = room_name
         self._session_key = settings.session_key_for_room(room_name)
@@ -63,6 +71,8 @@ class HermesTaskManager:
         self._healthy: bool | None = None
         self._local_queue: list[tuple[str, str]] = []
         self._ui = ui_client
+        self._on_long_running = on_long_running
+        self._standby_timer: asyncio.Task[None] | None = None
 
     @property
     def announce_queue(self) -> asyncio.Queue[str]:
@@ -71,6 +81,44 @@ class HermesTaskManager:
     @property
     def is_available(self) -> bool:
         return is_configured(self._settings) and self._healthy is not False
+
+    def has_active_tasks(self) -> bool:
+        if self._local_queue:
+            return True
+        return any(task.status in _ACTIVE_HERMES_STATUSES for task in self._tasks.values())
+
+    def _cancel_standby_timer(self) -> None:
+        if self._standby_timer is not None:
+            self._standby_timer.cancel()
+            self._standby_timer = None
+
+    def _schedule_standby_timer(self) -> None:
+        delay = self._settings.standby_after_seconds
+        if delay <= 0 or self._on_long_running is None or not self.has_active_tasks():
+            return
+        self._cancel_standby_timer()
+
+        async def _wait_then_standby() -> None:
+            try:
+                await asyncio.sleep(delay)
+                if self.has_active_tasks() and self._on_long_running is not None:
+                    result = self._on_long_running()
+                    if asyncio.iscoroutine(result):
+                        await result
+            except asyncio.CancelledError:
+                pass
+
+        self._standby_timer = asyncio.create_task(
+            _wait_then_standby(),
+            name="HermesTaskManager._wait_then_standby",
+        )
+
+    def _sync_standby_timer(self) -> None:
+        if self.has_active_tasks():
+            if self._standby_timer is None:
+                self._schedule_standby_timer()
+        else:
+            self._cancel_standby_timer()
 
     async def startup(self) -> None:
         if not is_configured(self._settings):
@@ -113,6 +161,7 @@ class HermesTaskManager:
     def _publish_snapshot(self) -> None:
         if self._ui is not None:
             self._ui.publish_hermes_tasks(self.snapshot())
+        self._sync_standby_timer()
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
         task = asyncio.create_task(coro)
@@ -401,6 +450,7 @@ class HermesTaskManager:
                 task.announced = True
 
     async def shutdown(self) -> None:
+        self._cancel_standby_timer()
         for bg in list(self._bg_tasks):
             bg.cancel()
         if self._bg_tasks:

@@ -32,7 +32,13 @@ AGENT_STATE_TO_PHASE = {
 }
 
 _PHASES_THAT_CLEAR_TRANSCRIPT = frozenset({UIPhase.IDLE, UIPhase.STANDBY, UIPhase.SPEAKING})
-_PHASES_THAT_CLEAR_LLM_TEXT = frozenset({UIPhase.IDLE, UIPhase.STANDBY, UIPhase.LISTENING})
+_PHASES_THAT_CLEAR_LLM_TEXT = frozenset({UIPhase.IDLE, UIPhase.STANDBY})
+
+_ACTIVE_HERMES_STATUSES = frozenset({"queued", "running", "waiting_approval"})
+
+
+def _has_active_hermes_tasks(state: "UIState") -> bool:
+    return any(task.status in _ACTIVE_HERMES_STATUSES for task in state.hermes_tasks)
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,8 @@ class UIState:
     def with_phase(self, phase: UIPhase, *, at: float | None = None) -> "UIState":
         keep_transcript = phase not in _PHASES_THAT_CLEAR_TRANSCRIPT
         keep_llm_text = phase not in _PHASES_THAT_CLEAR_LLM_TEXT
+        if phase is UIPhase.LISTENING and _has_active_hermes_tasks(self):
+            keep_llm_text = True
         return replace(
             self,
             phase=phase,

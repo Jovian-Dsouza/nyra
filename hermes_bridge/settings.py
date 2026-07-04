@@ -18,6 +18,7 @@ class HermesSettings:
     request_timeout: float
     summarize_model: str
     openai_api_key: str
+    standby_after_seconds: float
 
     def session_key_for_room(self, room_name: str) -> str:
         return f"{self.session_key_prefix}:{room_name}"
@@ -37,6 +38,7 @@ def load_hermes_settings() -> HermesSettings:
         request_timeout=float(os.environ.get("HERMES_REQUEST_TIMEOUT", "15.0")),
         summarize_model=os.environ.get("LLM_CHOICE", "gpt-4.1-mini"),
         openai_api_key=_strip_env(os.environ.get("OPENAI_API_KEY", "")),
+        standby_after_seconds=float(os.environ.get("HERMES_STANDBY_AFTER_SECONDS", "45")),
     )
 
 

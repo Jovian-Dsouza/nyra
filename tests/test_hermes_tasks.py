@@ -20,6 +20,7 @@ def _settings(**overrides) -> HermesSettings:
         request_timeout=5.0,
         summarize_model="gpt-4.1-mini",
         openai_api_key="",
+        standby_after_seconds=45.0,
     )
     base.update(overrides)
     return HermesSettings(**base)
@@ -157,6 +158,21 @@ async def test_cancel_removes_local_queue_entry():
     result = await manager.cancel("task-5")
     assert "Removed task-5" in result
     assert manager._local_queue == []
+
+
+def test_has_active_tasks():
+    manager = HermesTaskManager(_settings(), room_name="test-room")
+    assert manager.has_active_tasks() is False
+
+    from hermes_bridge.tasks import HermesTask
+
+    task = HermesTask(run_id="run_1", label="task-1", prompt="research", status="running")
+    manager._register_task(task)
+    assert manager.has_active_tasks() is True
+
+    task.status = "completed"
+    manager._publish_snapshot()
+    assert manager.has_active_tasks() is False
 
 
 def test_get_results_context_includes_completed_summaries():

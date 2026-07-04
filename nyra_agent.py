@@ -72,9 +72,10 @@ Routing:
 When delegating:
 1. Confirm what was queued using the task label returned by the tool.
 2. Keep talking — never go silent waiting for Hermes.
-3. If the user asks about progress, use list_hermes_tasks.
-4. If the user wants to cancel, use cancel_hermes_task with the task label.
-5. Before re-submitting a similar request, check list_hermes_tasks for duplicates.
+3. Do not call enter_standby after delegating or while Hermes tasks are still running.
+4. If the user asks about progress, use list_hermes_tasks.
+5. If the user wants to cancel, use cancel_hermes_task with the task label.
+6. Before re-submitting a similar request, check list_hermes_tasks for duplicates.
 
 When background task results appear in context or are announced, reference them naturally.
 """
@@ -129,10 +130,16 @@ class Assistant(Agent):
         """Return to passive wake-word listening when the conversation is clearly finished.
 
         Call after the user says goodbye, "that's all", or when their request is fully
-        resolved and no follow-up is expected. Do not call mid-task.
+        resolved and no follow-up is expected. Do not call mid-task or while Hermes
+        background tasks are still running.
         """
         if self._wakeword is None or not self._wakeword.enabled:
             return "Standby mode is not enabled in this session."
+        if self._hermes is not None and self._hermes.has_active_tasks():
+            return (
+                "Background tasks are still running — staying active so the user can "
+                "see the confirmation and task status."
+            )
         await context.wait_for_playout()
         await self._wakeword.enter_passive()
         return "Returning to standby. Say the wake word when you need me again."
@@ -256,8 +263,16 @@ async def entrypoint(ctx: agents.JobContext):
     ui = get_ui_client()
     ui.publish_hello(ctx.room.name)
 
+    wakeword_settings = load_wakeword_settings()
+    wakeword = WakeWordController(wakeword_settings, ui_client=ui)
+
     hermes_settings = load_hermes_settings()
-    hermes_manager = HermesTaskManager(hermes_settings, room_name=ctx.room.name, ui_client=ui)
+    hermes_manager = HermesTaskManager(
+        hermes_settings,
+        room_name=ctx.room.name,
+        ui_client=ui,
+        on_long_running=wakeword.enter_passive if wakeword.enabled else None,
+    )
     await hermes_manager.startup()
 
     async def _shutdown() -> None:
@@ -296,8 +311,6 @@ async def entrypoint(ctx: agents.JobContext):
         delay=filler_delay,
         min_interval=filler_min_interval,
     )
-    wakeword_settings = load_wakeword_settings()
-    wakeword = WakeWordController(wakeword_settings, ui_client=ui)
     hermes_announcer = HermesResultAnnouncer(session, hermes_manager, wakeword=wakeword)
     hermes_announcer.start()
     wakeword.start(session)
@@ -330,6 +343,7 @@ async def entrypoint(ctx: agents.JobContext):
             and wakeword.is_active
             and ev.new_state == "away"
             and ev.old_state != "away"
+            and not hermes_manager.has_active_tasks()
         ):
             asyncio.create_task(wakeword.enter_passive())
 

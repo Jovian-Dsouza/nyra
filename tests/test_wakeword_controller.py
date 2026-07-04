@@ -212,3 +212,20 @@ async def test_assistant_enter_standby_tool():
     assert "standby" in result.lower()
     context.wait_for_playout.assert_awaited_once()
     wakeword.enter_passive.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_assistant_enter_standby_blocked_with_active_hermes():
+    from nyra_agent import Assistant
+
+    hermes = MagicMock()
+    hermes.has_active_tasks = MagicMock(return_value=True)
+    wakeword = AsyncMock()
+    wakeword.enabled = True
+    wakeword.enter_passive = AsyncMock()
+
+    assistant = Assistant(memory_settings=MagicMock(), hermes=hermes, wakeword=wakeword)
+    result = await assistant.enter_standby(MagicMock())
+
+    assert "background tasks" in result.lower()
+    wakeword.enter_passive.assert_not_awaited()
