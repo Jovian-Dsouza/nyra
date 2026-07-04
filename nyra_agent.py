@@ -37,9 +37,13 @@ from hermes_bridge.tasks import upsert_hermes_results_message
 from nyra_speech import (
     GREETING_TEXT,
     WaitingSpeechController,
+    build_brevity_instructions,
+    count_words,
     load_filler_settings,
+    load_max_response_words,
     load_min_interruption_words,
     load_tts_settings,
+    truncate_to_word_limit,
 )
 from nyra_ui.bridge import get_ui_client
 from nyra_ui.launcher import start_ui_process, stop_ui_process
@@ -111,11 +115,16 @@ class Assistant(Agent):
         hermes: HermesTaskManager | None = None,
         ui_client=None,
         wakeword: WakeWordController | None = None,
+        max_response_words: int | None = None,
     ):
+        self._max_response_words = (
+            load_max_response_words() if max_response_words is None else max_response_words
+        )
+        brevity = build_brevity_instructions(self._max_response_words)
         super().__init__(
             instructions=f"""You are a helpful and friendly voice AI assistant named Nyra.
             You speak clearly and naturally, as if having a phone conversation.
-            Be concise but warm in your responses.
+            {brevity}
             When relevant memory context is provided in the conversation, use it naturally.
             If you don't know something and no memory context applies, be honest about it.
             {HERMES_INSTRUCTIONS}"""
@@ -217,6 +226,55 @@ class Assistant(Agent):
             results_text = self._hermes.get_results_context()
             if results_text:
                 upsert_hermes_results_message(turn_ctx, results_text)
+
+    async def llm_node(
+        self,
+        chat_ctx: llm.ChatContext,
+        tools: list,
+        model_settings: ModelSettings,
+    ):
+        stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
+        if self._max_response_words <= 0:
+            return stream
+        return self._truncate_llm_stream(stream)
+
+    async def _truncate_llm_stream(self, stream):
+        max_words = self._max_response_words
+        spoken = ""
+
+        async for chunk in stream:
+            if isinstance(chunk, str):
+                combined = spoken + chunk
+                truncated = truncate_to_word_limit(combined, max_words)
+                delta = truncated[len(spoken) :]
+                spoken = truncated
+                if delta:
+                    yield delta
+                if count_words(spoken) >= max_words:
+                    return
+                continue
+
+            if isinstance(chunk, llm.ChatChunk):
+                delta = chunk.delta
+                if delta is not None and delta.tool_calls:
+                    yield chunk
+                    continue
+                if delta is not None and delta.content:
+                    combined = spoken + delta.content
+                    truncated = truncate_to_word_limit(combined, max_words)
+                    new_content = truncated[len(spoken) :]
+                    spoken = truncated
+                    if new_content:
+                        yield llm.ChatChunk(
+                            id=chunk.id,
+                            delta=llm.ChoiceDelta(content=new_content),
+                            usage=chunk.usage,
+                        )
+                    if count_words(spoken) >= max_words:
+                        return
+                    continue
+
+            yield chunk
 
     async def transcription_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings

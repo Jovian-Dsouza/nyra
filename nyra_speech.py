@@ -37,6 +37,7 @@ WAITING_PHRASES = [
 
 DEFAULT_TTS_VOICE = "nova"
 DEFAULT_TTS_SPEED = 1.05
+DEFAULT_MAX_RESPONSE_WORDS = 50
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,44 @@ def load_filler_settings() -> tuple[float, float]:
 
 def load_min_interruption_words() -> int:
     return int(os.environ.get("NYRA_MIN_INTERRUPTION_WORDS", "2"))
+
+
+def load_max_response_words() -> int:
+    """Maximum words Nyra may speak per reply. Set to 0 to disable the limit."""
+    return int(os.environ.get("NYRA_MAX_RESPONSE_WORDS", str(DEFAULT_MAX_RESPONSE_WORDS)))
+
+
+def build_brevity_instructions(max_words: int) -> str:
+    if max_words <= 0:
+        return ""
+    return (
+        f"Keep every spoken reply to at most {max_words} words — summary style, not a lecture. "
+        f"Answer the core question directly, then stop. "
+        f"Do not read long lists aloud; give the top one or two points only. "
+        f"If more detail exists, say the user can ask a follow-up."
+    )
+
+
+def count_words(text: str) -> int:
+    return len(text.split())
+
+
+def truncate_to_word_limit(text: str, max_words: int) -> str:
+    """Trim text to max_words, preferring to end on a sentence boundary."""
+    if max_words <= 0:
+        return text
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+
+    truncated = " ".join(words[:max_words])
+    for sep in (". ", "! ", "? "):
+        idx = truncated.rfind(sep)
+        if idx >= len(truncated) // 2:
+            return truncated[: idx + 1].strip()
+
+    trimmed = truncated.rstrip(",;:")
+    return f"{trimmed}." if trimmed else truncated
 
 
 class WaitingSpeechController:

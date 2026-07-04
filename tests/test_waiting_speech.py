@@ -4,14 +4,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nyra_speech import (
+    DEFAULT_MAX_RESPONSE_WORDS,
     DEFAULT_TTS_SPEED,
     DEFAULT_TTS_VOICE,
     GREETING_TEXT,
     WAITING_PHRASES,
     WaitingSpeechController,
+    build_brevity_instructions,
+    count_words,
     load_filler_settings,
+    load_max_response_words,
     load_min_interruption_words,
     load_tts_settings,
+    truncate_to_word_limit,
 )
 
 
@@ -66,6 +71,37 @@ def test_load_tts_settings_from_env(monkeypatch):
     settings = load_tts_settings()
     assert settings.voice == "shimmer"
     assert settings.speed == 1.0
+
+
+def test_load_max_response_words_defaults(monkeypatch):
+    monkeypatch.delenv("NYRA_MAX_RESPONSE_WORDS", raising=False)
+    assert load_max_response_words() == DEFAULT_MAX_RESPONSE_WORDS
+
+
+def test_load_max_response_words_from_env(monkeypatch):
+    monkeypatch.setenv("NYRA_MAX_RESPONSE_WORDS", "30")
+    assert load_max_response_words() == 30
+
+
+def test_build_brevity_instructions_disabled_when_zero():
+    assert build_brevity_instructions(0) == ""
+
+
+def test_build_brevity_instructions_includes_limit():
+    text = build_brevity_instructions(40)
+    assert "40 words" in text
+
+
+def test_truncate_to_word_limit_keeps_short_text():
+    text = "One two three."
+    assert truncate_to_word_limit(text, 10) == text
+
+
+def test_truncate_to_word_limit_trims_long_text():
+    text = "One two three four five six seven eight nine ten eleven."
+    result = truncate_to_word_limit(text, 5)
+    assert count_words(result) <= 5
+    assert result.endswith(".")
 
 
 def test_next_phrase_from_pool():

@@ -9,6 +9,7 @@ import httpx
 
 from hermes_bridge.client import HermesClient, HermesClientError
 from hermes_bridge.settings import HermesSettings, is_configured
+from nyra_speech import load_max_response_words, truncate_to_word_limit
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,11 @@ MAX_CONTEXT_TASKS = 5
 
 _SUMMARIZE_PROMPT = """Summarize this background task result for a voice assistant to speak aloud.
 Rules:
-- 2 to 4 short sentences maximum
+- At most {max_words} words total
 - Plain spoken English, no markdown, bullets, or URLs
 - Spell out numbers naturally for speech
 - Start with what was accomplished or what went wrong
-- Be specific but concise
+- Be specific but concise — summary only, not a full report
 
 Task: {label}
 User request: {prompt}
@@ -477,16 +478,19 @@ class HermesTaskManager:
             return f"Task {task.label} completed but returned no output."
 
         if not self._settings.openai_api_key:
-            return _truncate_for_speech(
+            max_words = load_max_response_words() or 50
+            return truncate_to_word_limit(
                 f"Task {task.label} finished. {raw}",
-                max_chars=400,
+                max_words=max_words,
             )
 
         prompt = _SUMMARIZE_PROMPT.format(
+            max_words=load_max_response_words() or 50,
             label=task.label,
             prompt=_short_description(task.prompt),
             output=raw,
         )
+        max_words = load_max_response_words()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -498,6 +502,7 @@ class HermesTaskManager:
                     json={
                         "model": self._settings.summarize_model,
                         "temperature": 0.3,
+                        "max_tokens": max(24, (max_words or 50) * 2),
                         "messages": [{"role": "user", "content": prompt}],
                     },
                 )
@@ -505,12 +510,16 @@ class HermesTaskManager:
                 data = response.json()
                 task.tokens_used = (data.get("usage") or {}).get("total_tokens")
                 content = data["choices"][0]["message"]["content"]
-                return str(content).strip()
+                summary = str(content).strip()
+                if max_words > 0:
+                    summary = truncate_to_word_limit(summary, max_words)
+                return summary
         except Exception:
             logger.warning("[hermes] summarization failed for %s", task.label, exc_info=True)
-            return _truncate_for_speech(
+            max_words = load_max_response_words() or 50
+            return truncate_to_word_limit(
                 f"Task {task.label} finished. {raw}",
-                max_chars=400,
+                max_words=max_words,
             )
 
     def get_results_context(self) -> str | None:
