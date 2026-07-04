@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,7 @@ class WakeWordController:
         settings: WakeWordSettings | None = None,
         *,
         ui_client: Any = None,
+        echo_tail_seconds: float | None = None,
     ) -> None:
         self._settings = settings or load_wakeword_settings()
         self._ui = ui_client
@@ -46,6 +48,13 @@ class WakeWordController:
         self._activated_once = False
         self._activating = asyncio.Lock()
         self._install_task: asyncio.Task[None] | None = None
+        self._suppress_stt = False
+        self._stt_resume_task: asyncio.Task[None] | None = None
+        if echo_tail_seconds is None:
+            echo_tail_seconds = float(
+                os.environ.get("NYRA_ECHO_TAIL_SECONDS", "0.35")
+            )
+        self._echo_tail_seconds = max(0.0, echo_tail_seconds)
 
     @property
     def enabled(self) -> bool:
@@ -68,13 +77,55 @@ class WakeWordController:
 
     def start(self, session: AgentSession) -> None:
         self._session = session
-        if not self.enabled:
-            return
-        self._detector.load()
+        if self.enabled:
+            self._detector.load()
         self._install_task = asyncio.create_task(
             self._install_gate_when_ready(session),
             name="WakeWordController._install_gate_when_ready",
         )
+
+    def on_agent_state_changed(self, new_state: str, old_state: str) -> None:
+        """Block mic→STT while the agent speaks to prevent speaker echo loops."""
+        if new_state in ("speaking", "thinking"):
+            if self._stt_resume_task is not None:
+                self._stt_resume_task.cancel()
+                self._stt_resume_task = None
+            self._suppress_stt = True
+            self._sync_stt_forward()
+            if self._session is not None:
+                try:
+                    self._session.clear_user_turn()
+                except RuntimeError:
+                    pass
+            return
+
+        if old_state in ("speaking", "thinking") and new_state in ("listening", "idle"):
+            if self._echo_tail_seconds <= 0:
+                self._suppress_stt = False
+                self._sync_stt_forward()
+                return
+
+            if self._stt_resume_task is not None:
+                self._stt_resume_task.cancel()
+
+            async def _resume() -> None:
+                try:
+                    await asyncio.sleep(self._echo_tail_seconds)
+                    self._suppress_stt = False
+                    self._sync_stt_forward()
+                except asyncio.CancelledError:
+                    pass
+
+            self._stt_resume_task = asyncio.create_task(
+                _resume(),
+                name="WakeWordController._resume_stt_after_echo_tail",
+            )
+
+    def _sync_stt_forward(self) -> None:
+        if self._gate is None:
+            return
+        allow = (not self.enabled or self.is_active) and not self._suppress_stt
+        self._gate.set_forward_enabled(allow)
 
     async def _install_gate_when_ready(self, session: AgentSession) -> None:
         while session.input.audio is None:
@@ -84,11 +135,16 @@ class WakeWordController:
         if isinstance(current, WakeWordGateInput):
             self._gate = current
         else:
-            self._gate = WakeWordGateInput(current, self._detector, self)
+            detector = self._detector if self.enabled else None
+            self._gate = WakeWordGateInput(current, detector, self if self.enabled else None)
             session.input.audio = self._gate
 
-        await self.enter_passive(publish_ui=True)
-        logger.info("[wakeword] gate installed; starting in passive mode")
+        if self.enabled:
+            await self.enter_passive(publish_ui=True)
+            logger.info("[wakeword] gate installed; starting in passive mode")
+        else:
+            self._sync_stt_forward()
+            logger.info("[audio] echo gate installed for STT input")
 
     async def on_wake_detected(self, model_name: str, score: float) -> None:
         if not self.enabled or self._mode is InteractionMode.ACTIVE:
@@ -110,8 +166,7 @@ class WakeWordController:
                 return
 
             self._mode = InteractionMode.ACTIVE
-            if self._gate is not None:
-                self._gate.set_forward_enabled(True)
+            self._sync_stt_forward()
             if self._session is not None:
                 self._session.input.set_audio_enabled(True)
 
@@ -145,8 +200,11 @@ class WakeWordController:
             return
 
         self._mode = InteractionMode.PASSIVE
-        if self._gate is not None:
-            self._gate.set_forward_enabled(False)
+        self._suppress_stt = False
+        if self._stt_resume_task is not None:
+            self._stt_resume_task.cancel()
+            self._stt_resume_task = None
+        self._sync_stt_forward()
         if self._session is not None:
             self._session.input.set_audio_enabled(True)
             try:
@@ -160,6 +218,13 @@ class WakeWordController:
         logger.info("[wakeword] returned to wake-word clock screen")
 
     async def shutdown(self) -> None:
+        if self._stt_resume_task is not None:
+            self._stt_resume_task.cancel()
+            try:
+                await self._stt_resume_task
+            except asyncio.CancelledError:
+                pass
+            self._stt_resume_task = None
         if self._install_task is not None:
             self._install_task.cancel()
             try:

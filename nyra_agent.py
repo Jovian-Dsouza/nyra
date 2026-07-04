@@ -315,6 +315,7 @@ async def entrypoint(ctx: agents.JobContext):
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
         hermes_announcer.on_state_changed(ev.new_state)
+        wakeword.on_agent_state_changed(ev.new_state, ev.old_state)
         if wakeword.is_active or not wakeword.enabled:
             ui.publish_phase(ev.new_state)
         if ev.new_state == "thinking":
@@ -347,6 +348,6 @@ async def entrypoint(ctx: agents.JobContext):
 if __name__ == "__main__":
     ui_process = start_ui_process()
     try:
-        cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+        cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, initialize_process_timeout=30.0))
     finally:
         stop_ui_process(ui_process)

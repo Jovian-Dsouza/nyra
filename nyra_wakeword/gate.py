@@ -12,13 +12,13 @@ if TYPE_CHECKING:
 
 
 class WakeWordGateInput(AudioInput):
-    """Tee room audio through openWakeWord; gate STT when passive."""
+    """Tee room audio through openWakeWord; gate STT when passive or during agent speech."""
 
     def __init__(
         self,
         source: AudioInput,
-        detector: WakeWordDetector,
-        controller: WakeWordController,
+        detector: WakeWordDetector | None = None,
+        controller: WakeWordController | None = None,
     ) -> None:
         # Do not pass source into AudioInput — the base on_attached() recurses.
         super().__init__(label="wakeword_gate", source=None)
@@ -44,9 +44,10 @@ class WakeWordGateInput(AudioInput):
     async def __anext__(self) -> rtc.AudioFrame:
         while True:
             frame = await self._source.__anext__()
-            detection = await self._detector.process_frame(frame)
-            if detection is not None:
-                async with self._lock:
-                    await self._controller.on_wake_detected(detection[0], detection[1])
+            if self._detector is not None and self._controller is not None:
+                detection = await self._detector.process_frame(frame)
+                if detection is not None:
+                    async with self._lock:
+                        await self._controller.on_wake_detected(detection[0], detection[1])
             if self._forward_enabled:
                 return frame
