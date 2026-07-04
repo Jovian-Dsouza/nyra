@@ -317,11 +317,11 @@ class PygameRenderer:
 
     def _draw_memory_field(self, surface, state: UIState, y: int) -> int:
         if state.memory_status == "recalling":
-            text = "recalling…"
+            text = "memory recalling…"
         elif state.memory_status == "done":
             count = state.memory_match_count or 0
             noun = "match" if count == 1 else "matches"
-            text = f"{count} {noun} recalled" if count else "no matches"
+            text = f"memory · {count} {noun} recalled" if count else "memory · no matches"
         else:
             text = ""
         if not text:
