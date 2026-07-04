@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1956.25" height="1448.89" viewBox="0 0 1956.25 1448.89">
+<defs>
+    <marker id="arr-495057" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057"/></marker>
+  </defs>
+<rect width="1956.25" height="1448.89" fill="#ffffff"/>
+<rect x="1596.00" y="1055.54" width="175.00" height="68.00" rx="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="1.00"/>
+<rect x="1153.75" y="1331.89" width="202.00" height="68.00" rx="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="1.00"/>
+<rect x="467.00" y="206.00" width="1280.00" height="86.00" rx="8" fill="#d0ebff" stroke="#1864ab" stroke-width="2" opacity="1.00"/>
+<rect x="1089.10" y="212.00" width="35.80" height="21.00" rx="8" fill="#e9ecef" stroke="#1864ab" stroke-width="1" opacity="1.00"/>
+<rect x="1768.25" y="1322.89" width="148.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="1821.05" y="1328.89" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="1193.25" y="40.00" width="166.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="1255.05" y="46.00" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="652.38" y="688.43" width="740.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="1001.17" y="694.43" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="1581.00" y="866.43" width="140.00" height="62.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="1629.80" y="872.43" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="889.25" y="40.00" width="184.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="960.05" y="46.00" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="40.00" y="459.13" width="1727.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="882.30" y="465.13" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="346.00" y="688.43" width="166.00" height="86.00" rx="8" fill="#dbe4ff" stroke="#364fc7" stroke-width="2" opacity="1.00"/>
+<rect x="414.40" y="694.43" width="29.20" height="21.00" rx="8" fill="#e9ecef" stroke="#364fc7" stroke-width="1" opacity="1.00"/>
+<rect x="286.00" y="854.43" width="1235.00" height="86.00" rx="8" fill="#edf2ff" stroke="#3b5bdb" stroke-width="2" opacity="1.00"/>
+<rect x="882.30" y="860.43" width="42.40" height="21.00" rx="8" fill="#e9ecef" stroke="#3b5bdb" stroke-width="1" opacity="1.00"/>
+<rect x="105.00" y="1046.54" width="166.00" height="86.00" rx="8" fill="#e5dbff" stroke="#6741d9" stroke-width="2" opacity="1.00"/>
+<rect x="173.40" y="1052.54" width="29.20" height="21.00" rx="8" fill="#e9ecef" stroke="#6741d9" stroke-width="1" opacity="1.00"/>
+<rect x="391.00" y="1055.54" width="1145.00" height="68.00" rx="8" fill="#f1f3f5" stroke="#495057" stroke-width="2" opacity="1.00"/>
+<rect x="337.00" y="506.43" width="184.00" height="68.00" rx="8" fill="#f8f9fa" stroke="#495057" stroke-width="2" opacity="1.00"/>
+<path d="M 1657.00,1123.54 L 1455.99,1206.88 L 1347.75,1331.89" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1161.75,1331.89 L 1807.00,1214.04 L 1807.00,380.99 L 1233.40,292.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1710.00,1123.54 L 1776.25,1322.89" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1776.25,1322.89 L 1811.00,1211.35 L 1811.00,380.99 L 1486.20,292.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1201.25,126.00 L 980.60,206.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 791.00,292.00 L 1331.25,459.13" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 475.75,545.13 L 561.00,545.13 L 561.00,636.63 L 454.00,688.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 504.00,688.43 L 561.00,636.63 L 561.00,545.13 L 475.75,545.13" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1331.25,545.13 L 903.50,688.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1423.00,292.00 L 1807.00,380.99 L 1807.00,616.12 L 1143.04,688.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1143.04,774.43 L 1589.00,866.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1683.50,928.43 L 1651.00,1055.54" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 901.71,774.43 L 1022.38,854.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 700.33,940.43 L 263.00,1046.54" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 263.00,1046.54 L 294.00,940.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1106.67,854.43 L 901.71,774.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 700.33,854.43 L 612.37,826.43 L 612.37,617.44 L 903.50,545.13" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 1107.00,292.00 L 1827.00,380.99 L 1827.00,1002.97 L 1245.75,1055.54" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1106.67,940.43 L 963.50,1055.54" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 903.50,545.13 L 226.00,617.44 L 226.00,1002.97 L 681.25,1055.54" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1065.25,126.00 L 727.80,206.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 429.00,574.43 L 404.00,688.43" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<text x="1683.50" y="1069.54" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1683.50" dy="16.00">User</tspan><tspan x="1683.50" dy="20.00">(mic / speaker)</tspan></text>
+<text x="1254.75" y="1345.89" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1254.75" dy="16.00">nyra_wakeword/</tspan><tspan x="1254.75" dy="20.00">WakeWordController</tspan></text>
+<text x="1107.00" y="237.00" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1107.00" dy="16.00">nyra_agent.py</tspan><tspan x="1107.00" dy="20.00">Assistant + AgentSession</tspan></text>
+<text x="1107.00" y="215.00" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1107.00" dy="12.00">K8s</tspan></text>
+<text x="1842.25" y="1353.89" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1842.25" dy="16.00">Deepgram STT</tspan><tspan x="1842.25" dy="20.00">Nova-3</tspan></text>
+<text x="1842.25" y="1331.89" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1842.25" dy="12.00">REST</tspan></text>
+<text x="1276.25" y="71.00" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1276.25" dy="16.00">Silero VAD +</tspan><tspan x="1276.25" dy="20.00">Turn Detection</tspan></text>
+<text x="1276.25" y="49.00" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1276.25" dy="12.00">REST</tspan></text>
+<text x="1022.38" y="719.43" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1022.38" dy="16.00">OpenAI LLM</tspan><tspan x="1022.38" dy="20.00">gpt-4.1-mini</tspan></text>
+<text x="1022.37" y="697.43" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1022.37" dy="12.00">REST</tspan></text>
+<text x="1651.00" y="895.43" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1651.00" dy="16.00">OpenAI TTS</tspan></text>
+<text x="1651.00" y="875.43" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1651.00" dy="12.00">REST</tspan></text>
+<text x="981.25" y="71.00" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="981.25" dy="16.00">nyra_speech.py</tspan><tspan x="981.25" dy="20.00">Filler / brevity</tspan></text>
+<text x="981.25" y="49.00" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="981.25" dy="12.00">REST</tspan></text>
+<text x="903.50" y="490.13" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="903.50" dy="16.00">cognee_memory.py</tspan><tspan x="903.50" dy="20.00">recall / remember / improve / forget</tspan></text>
+<text x="903.50" y="468.13" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="903.50" dy="12.00">REST</tspan></text>
+<text x="429.00" y="719.43" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="429.00" dy="16.00">Cognee Cloud</tspan><tspan x="429.00" dy="20.00">or local graph</tspan></text>
+<text x="429.00" y="697.43" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="429.00" dy="12.00">DB</tspan></text>
+<text x="903.50" y="885.43" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="903.50" dy="16.00">hermes_bridge/</tspan><tspan x="903.50" dy="20.00">TaskManager + Announcer</tspan></text>
+<text x="903.50" y="863.43" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="903.50" dy="12.00">REST</tspan></text>
+<text x="188.00" y="1077.54" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="188.00" dy="16.00">Hermes Gateway</tspan><tspan x="188.00" dy="20.00">:8642</tspan></text>
+<text x="188.00" y="1055.54" font-size="12" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="188.00" dy="12.00">LB</tspan></text>
+<text x="963.50" y="1069.54" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="963.50" dy="16.00">nyra_ui/</tspan><tspan x="963.50" dy="20.00">Pygame status display</tspan></text>
+<text x="429.00" y="520.43" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="429.00" dy="16.00">ingest_cloud.py</tspan><tspan x="429.00" dy="20.00">Batch remember()</tspan></text>
+<rect x="1456.87" y="1186.13" width="46.50" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1480.12" y="1188.13" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1480.12" dy="14.00">audio</tspan></text>
+<rect x="1745.25" y="824.50" width="123.50" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1807.00" y="826.50" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1807.00" dy="14.00">gate / activate</tspan></text>
+<rect x="1716.03" y="1212.46" width="54.20" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1743.13" y="1214.46" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1743.13" dy="14.00">speech</tspan></text>
+<rect x="1768.50" y="675.45" width="85.00" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1811.00" y="677.45" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1811.00" dy="14.00">transcript</tspan></text>
+<rect x="1029.17" y="155.25" width="123.50" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1090.92" y="157.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1090.92" dy="14.00">turn boundaries</tspan></text>
+<rect x="972.42" y="364.81" width="177.40" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1061.12" y="366.81" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1061.12" dy="14.00">on_user_turn_completed</tspan></text>
+<rect x="545.45" y="596.94" width="31.10" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="561.00" y="598.94" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="561.00" dy="14.00">API</tspan></text>
+<rect x="526.20" y="576.02" width="69.60" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="561.00" y="578.02" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="561.00" dy="14.00">snippets</tspan></text>
+<rect x="1040.22" y="606.03" width="154.30" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1117.37" y="608.03" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1117.37" dy="14.00">nyra_memory_context</tspan></text>
+<rect x="1737.62" y="607.46" width="100.40" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1787.82" y="609.46" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1787.82" dy="14.00">chat + tools</tspan></text>
+<rect x="1323.52" y="809.68" width="85.00" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1366.02" y="811.68" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1366.02" dy="14.00">reply text</tspan></text>
+<rect x="1617.05" y="981.23" width="100.40" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1667.25" y="983.23" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1667.25" dy="14.00">spoken audio</tspan></text>
+<rect x="888.75" y="803.68" width="146.60" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="962.05" y="805.68" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="962.05" dy="14.00">delegate_to_hermes</tspan></text>
+<rect x="439.17" y="982.73" width="85.00" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="481.67" y="984.73" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="481.67" dy="14.00">HTTP tasks</tspan></text>
+<rect x="220.60" y="982.74" width="115.80" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="278.50" y="984.74" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="278.50" dy="14.00">poll / results</tspan></text>
+<rect x="942.44" y="803.68" width="123.50" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1004.19" y="805.68" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1004.19" dy="14.00">voice summaries</tspan></text>
+<rect x="542.92" y="607.35" width="138.90" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="612.37" y="609.35" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="612.37" dy="14.00">remember findings</tspan></text>
+<rect x="1772.95" y="610.30" width="108.10" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1827.00" y="612.30" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1827.00" dy="14.00">socket events</tspan></text>
+<rect x="988.74" y="987.23" width="92.70" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="1035.09" y="989.23" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1035.09" dy="14.00">task status</tspan></text>
+<rect x="171.95" y="687.92" width="108.10" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="226.00" y="689.92" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="226.00" dy="14.00">recall status</tspan></text>
+<rect x="834.77" y="155.25" width="123.50" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="896.52" y="157.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="896.52" dy="14.00">thinking filler</tspan></text>
+<rect x="335.50" y="620.68" width="162.00" height="21.50" rx="3" fill="#ffffff" opacity="1.00"/><text x="416.50" y="622.68" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="416.50" dy="14.00">bootstrap remember()</tspan></text>
+</svg>

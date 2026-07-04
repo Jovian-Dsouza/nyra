@@ -1,327 +1,154 @@
-# LiveKit Voice Agent
 
-A LiveKit-powered voice AI agent framework that demonstrates how to build realtime conversational AI with MCP (Model Context Protocol) server integration.
 
-## Features
 
-- 🎤 Natural voice conversations with low latency
-- 🔄 Real-time voice interaction with interruption handling
-- 🛠️ Tool integration via MCP servers
-- 🎯 Multiple provider options (OpenAI, Deepgram, Cartesia, etc.)
-- 🔌 Extensible architecture for custom tools and agents
 
-## Prerequisites
+<!-- <h1 align="center">Nyra</h1> -->
+<p align="center">
+  <img src="nyra_ui/assets/nyra_logo.png" alt="Nyra" height="100" />
+</p>
 
-- Python 3.9 or later
-- API Keys:
-  - OpenAI API key
-  - Deepgram API key
-  - LiveKit credentials (optional - only if deploying to LiveKit Cloud)
+<p align="center">
+  <strong>Nyra remembers you, learns from every conversation, and never goes silent while work happens in the background.</strong>
+</p>
 
-## Quick Start
+<p align="center">
+  A voice assistant built on <a href="https://docs.cognee.ai">Cognee</a> memory and Hermes delegation — the kind of assistant smart speakers promised but never delivered.
+</p>
 
-### 1. Install Dependencies
+<p align="center">
+  Built for the Cognee hackathon · Voice-native memory on Raspberry Pi
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/CeosXxI2yZ4">
+    <img src="https://img.youtube.com/vi/CeosXxI2yZ4/maxresdefault.jpg" alt="Watch the Nyra demo on YouTube" width="640">
+  </a>
+  <br />
+  <strong><a href="https://youtu.be/CeosXxI2yZ4">Watch the demo on YouTube</a></strong>
+</p>
+
+---
+
+## TL;DR
+
+**Nyra** is a voice assistant for Raspberry Pi, built with LiveKit Agents. It remembers you across sessions and stays conversational while work runs in the background.
+
+**What makes it different**
+
+- **Memory** — Cognee knowledge graph, not session amnesia
+- **Speed** — `recall()` injects your facts before every reply
+- **Learning** — `remember()` and `improve()` build permanent context
+- **Privacy** — `forget()` prunes what you no longer want stored
+- **Background work** — Hermes handles slow tasks while Nyra keeps talking
+
+**Cognee lifecycle in one line:** ingest with `remember()` → query with `recall()` → enrich with `improve()` → prune with `forget()`.
+
+## Beyond Alexa
+
+Smart speakers answer in the moment. They forget you between sessions, stall on anything that takes longer than a few seconds, and treat every user the same. Nyra is different.
+
+| Alexa-style assistants | Nyra |
+|------------------------|------|
+| Forgets you between sessions | **Cognee knowledge graph** persists preferences, facts, and context |
+| Blocks on slow tasks | **Hermes** runs research, browsing, and file work asynchronously |
+| Generic answers | **`recall()`** injects *your* data before every reply |
+| No graph enrichment | **`improve()`** consolidates session learnings into permanent memory |
+| Hard to erase data | **`forget()`** surgically prunes what you no longer want stored |
+
+Alexa answers in the moment. Nyra **recalls** your history, **remembers** what matters, **improves** its graph after every session, **forgets** on request, and **delegates** work that would make any voice assistant go silent.
+
+
+
+---
+
+
+
+**Stack:** LiveKit Agents · Deepgram Nova-3 STT · OpenAI LLM/TTS · Silero VAD · multilingual turn detection · Cognee Cloud or local graph · Hermes gateway · Pygame status UI · openWakeWord standby on Raspberry Pi.
+
+---
+
+
+
+## Quick start
+
+### Prerequisites
+
+- Python 3.10+
+- [UV](https://docs.astral.sh/uv/) package manager
+- API keys: OpenAI, Deepgram
+- Cognee Cloud tenant (recommended) or local Cognee install
+
+### Install and configure
 
 ```bash
-# Install dependencies using UV
 uv sync
-```
-
-### 2. Set Up Environment Variables
-
-Copy `.env.example` to `.env` and fill in your credentials:
-
-```bash
 cp .env.example .env
 ```
 
-**Required variables:**
-- `OPENAI_API_KEY` - OpenAI API key
-- `DEEPGRAM_API_KEY` - Deepgram API key
 
-**Optional for LiveKit Cloud deployment:**
-- `LIVEKIT_URL` - LiveKit server URL
-- `LIVEKIT_API_KEY` - LiveKit API key
-- `LIVEKIT_API_SECRET` - LiveKit API secret
 
-### 3. Download Required Model Files
-
-Before first run, download the required model files (Silero VAD, turn detector):
+### Seed memory
 
 ```bash
-# Download model files for basic agent
-uv run python livekit_basic_agent.py download-files
-
-# Download model files for MCP agent
-uv run python livekit_mcp_agent.py download-files
+uv run python ingest_cloud.py path/to/your/notes.md
 ```
 
-### 4. Run the Agent
+Or set `COGNEE_BOOTSTRAP_PATH` in `.env` to auto-ingest on first startup when the cloud graph is empty.
+
+### Run Nyra
 
 ```bash
-# Basic agent (minimal configuration)
-uv run python livekit_basic_agent.py console
-
-# MCP agent (with MCP server integration)
-uv run python livekit_mcp_agent.py console
-
-# Development mode (connects to LiveKit - optional)
-uv run python livekit_basic_agent.py dev
-
-# Production mode
-uv run python livekit_basic_agent.py start
-```
-
-## Architecture
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   LiveKit   │──b─▶│ Voice Agent  │───▶│ MCP Servers │
-│   Client    │     │              │     │   (Tools)   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │             │
-              ┌─────▼────┐  ┌────▼─────┐
-              │ Deepgram │  │  OpenAI  │
-              │   STT    │  │ LLM/TTS  │
-              └──────────┘  └──────────┘
-```
-
-## Project Files
-
-### Basic Agent
-
-**`livekit_basic_agent.py`** - The simplest possible LiveKit voice agent
-- Minimal configuration with only essential components
-- Great for learning and testing basic functionality
-- Requires only OpenAI and Deepgram API keys
-- Includes example tool: `get_current_date_and_time`
-
-### MCP Agent
-
-**`livekit_mcp_agent.py`** - Full-featured voice agent with:
-- Configurable speech-to-text, LLM, and text-to-speech providers
-- MCP server integration for tool calling
-- Multilingual turn detection
-- Event handling and state management
-- Logging and metrics support
-
-## Voice Pipeline Configuration
-
-The agent uses a modular voice pipeline with swappable components:
-
-### Speech-to-Text (STT)
-- **Default**: Deepgram Nova-2 (highest accuracy)
-- Alternatives: AssemblyAI, Azure Speech, Whisper
-
-### Large Language Model (LLM)
-- **Default**: OpenAI GPT-4.1-mini (fast, cost-effective)
-- Alternatives: Anthropic Claude, Google Gemini, Groq
-
-### Text-to-Speech (TTS)
-- **Default**: OpenAI Echo voice (natural, versatile)
-- Alternatives: Cartesia (fastest), ElevenLabs (highest quality)
-
-### Voice Activity Detection (VAD)
-- **Default**: Silero VAD (reliable voice detection)
-
-### Turn Detection
-- **Default**: Multilingual Model (natural conversation flow)
-- Alternatives: Semantic model, VAD-based
-
-## MCP Server Integration
-
-The agent supports integration with MCP (Model Context Protocol) servers for extending functionality with custom tools.
-
-### Configuring MCP Servers
-
-In `livekit_mcp_agent.py`:
-
-```python
-session = AgentSession(
-    # ... other config ...
-    mcp_servers=[
-        mcp.MCPServerHTTP(url="http://localhost:8089/mcp")
-    ]
-)
-```
-
-### Adding Custom Tools
-
-You can also add tools directly to your agent using the `@function_tool` decorator:
-
-```python
-from livekit.agents import function_tool, RunContext
-from datetime import datetime
-
-class Assistant(Agent):
-    @function_tool
-    async def get_current_time(self, context: RunContext) -> str:
-        """Get the current time."""
-        return datetime.now().strftime("%I:%M %p")
-```
-
-## Development
-
-### Project Structure
-
-```
-livekit-agent/
-├── livekit_basic_agent.py   # Basic example agent
-├── livekit_mcp_agent.py     # MCP-enabled agent
-├── pyproject.toml           # Dependencies
-├── .env.example             # Environment template
-├── Dockerfile               # Container deployment
-└── README.md
-```
-
-### Installing Additional Providers
-
-```bash
-# Additional TTS providers
-uv add livekit-plugins-cartesia livekit-plugins-elevenlabs
-
-# Additional LLM providers
-uv add livekit-plugins-anthropic livekit-plugins-google livekit-plugins-groq
-
-# Additional STT providers
-uv add livekit-plugins-assemblyai livekit-plugins-azure
-```
-
-## Deploy to LiveKit Cloud
-
-Once you've tested your agent locally, deploy it to LiveKit Cloud for production use:
-
-### 1. Create a LiveKit Cloud Account
-
-Sign up at [LiveKit Cloud](https://cloud.livekit.io/)
-
-### 2. Install the LiveKit CLI
-
-Choose the installation method for your platform:
-
-**Windows:**
-```bash
-winget install LiveKit.LiveKitCLI
-```
-
-**Mac:**
-```bash
-brew install livekit
-```
-
-**Linux:**
-```bash
-curl -sSL https://get.livekit.io/ | bash
-```
-
-### 3. Authenticate with LiveKit Cloud
-
-Open a new terminal and authenticate:
-
-```bash
-lk cloud auth
-```
-
-### 4. Configure Environment Variables
-
-Set up your environment variables for the cloud:
-
-```bash
-lk app env -w
-```
-
-This will write your LiveKit credentials to `.env.local`
-
-### 5. Start Your Agent
-
-Run your agent connected to LiveKit Cloud:
-
-```bash
-uv run python livekit_basic_agent.py start
-```
-
-### 6. Create an Agent in LiveKit Cloud
-
-In a separate terminal, register your agent:
-
-```bash
-lk agent create
-```
-
-### 7. Test in the Playground
-
-Visit the [LiveKit Agents Playground](https://agents-playground.livekit.io/) and sign in with your LiveKit organization to test your agent in the browser.
-
-### 8. Telephony Integration (Optional)
-
-To integrate your agent with phone calling systems, see the [LiveKit Telephony documentation](https://docs.livekit.io/agents/start/telephony/)
-
-## Performance Optimization
-
-### Reduce Latency
-- Use regional deployments close to users
-- Choose faster providers (Deepgram for STT, Cartesia for TTS)
-- Use streaming where possible
-
-### Scale Efficiently
-- Set appropriate prewarm counts in `livekit.toml` for production
-- Use connection pooling for external API calls
-- Implement caching for frequently accessed data
-
-## Console Mode Testing
-
-Console mode lets you test your agent locally without needing a LiveKit server:
-
-```bash
-# Test the basic agent
-uv run python livekit_basic_agent.py console
-
-# Test the MCP agent
-uv run python livekit_mcp_agent.py console
-```
-
-This will start an interactive console where you can speak to your agent using your microphone and speakers.
-
-## Troubleshooting
-
-### Python Version
-Ensure you're using Python 3.9 or later:
-```bash
-python --version
-```
-
-### Model Downloads
-TTS models may download on first use, which can take time. The Docker image pre-downloads Silero VAD to speed up startup.
-
-### API Key Issues
-- Verify all required API keys are set in `.env`
-- Check that API keys are valid and have sufficient credits
-- Ensure no extra whitespace in environment variable values
-
-### Audio Issues in Console Mode
-- Check microphone/speaker permissions
-- Verify audio devices are correctly configured
-- Try adjusting VAD sensitivity if voice detection is problematic
-
-## Environment Variables Reference
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for LLM/TTS |
-| `DEEPGRAM_API_KEY` | Yes | Deepgram API key for STT |
-| `LIVEKIT_URL` | No | LiveKit server URL (for deployment) |
-| `LIVEKIT_API_KEY` | No | LiveKit API key (for deployment) |
-| `LIVEKIT_API_SECRET` | No | LiveKit API secret (for deployment) |
-| `LLM_CHOICE` | No | Model selection (default: gpt-4.1-mini) |
-| `LOG_LEVEL` | No | Logging level (default: INFO) |
-
-## Resources
-
-- [LiveKit Agents Documentation](https://docs.livekit.io/agents/)
-- [LiveKit Python SDK](https://github.com/livekit/agents)
-
-## useful commands
-uv run python ingest_cloud.py ../nyra-livekit/notes/user_context.md
 uv run python nyra_agent.py console
+```
+
+Console mode uses your microphone and speakers — no LiveKit server required. A Pygame status window launches automatically (disable with `NYRA_UI_ENABLED=false`).
+
+### Run tests
+
+```bash
+uv run pytest -v --asyncio-mode=auto
+```
+
+---
+
+## Environment variables
+
+
+### Cognee memory
+
+| Variable | Description |
+|----------|-------------|
+| `COGNEE_BASE_URL` | Cognee Cloud tenant URL |
+| `COGNEE_API_KEY` | Cognee Cloud API key |
+| `SESSIONS_DATASET` | Target dataset name (default: `default_dataset`) |
+| `COGNEE_RECALL_TYPE` | `CHUNKS`, `GRAPH_COMPLETION`, or `GRAPH_SUMMARY_COMPLETION` |
+| `COGNEE_RECALL_TIMEOUT` | Recall timeout in seconds (default: `8.0` cloud) |
+| `COGNEE_BOOTSTRAP_PATH` | Comma-separated files to ingest when graph is empty |
+| `COGNEE_SYSTEM_ROOT_DIRECTORY` | Local Cognee storage (fallback when cloud vars unset) |
+
+### Hermes (optional)
+
+| Variable | Description |
+|----------|-------------|
+| `HERMES_API_URL` | Hermes gateway URL (default: `http://127.0.0.1:8642`) |
+| `HERMES_API_KEY` | Hermes API server key |
+| `HERMES_SESSION_KEY` | Session key prefix (default: `nyra`) |
+| `HERMES_MAX_CONCURRENT` | Max parallel Hermes runs (default: `3`) |
+
+Verify Hermes is running: `curl localhost:8642/health`
+
+### UI and wake word (optional)
+
+| Variable | Description |
+|----------|-------------|
+| `NYRA_UI_ENABLED` | Launch Pygame status window (default: `true`) |
+| `NYRA_UI_FULLSCREEN` | Kiosk mode for Pi display |
+| `NYRA_WAKEWORD_ENABLED` | Passive listening until wake word (default: `true`) |
+| `NYRA_FILLER_DELAY_SECONDS` | Delay before filler speech during thinking |
+
+See [`.env.example`](.env.example) for the full list.
+
+---
+
+
+
