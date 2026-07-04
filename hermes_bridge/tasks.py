@@ -46,10 +46,11 @@ class HermesTask:
     error_message: str | None = None
     announced: bool = False
     is_scheduled: bool = False
+    tokens_used: int | None = None
 
 
 class HermesTaskManager:
-    def __init__(self, settings: HermesSettings, *, room_name: str) -> None:
+    def __init__(self, settings: HermesSettings, *, room_name: str, ui_client=None) -> None:
         self._settings = settings
         self._room_name = room_name
         self._session_key = settings.session_key_for_room(room_name)
@@ -61,6 +62,7 @@ class HermesTaskManager:
         self._announce_queue: asyncio.Queue[str] = asyncio.Queue()
         self._healthy: bool | None = None
         self._local_queue: list[tuple[str, str]] = []
+        self._ui = ui_client
 
     @property
     def announce_queue(self) -> asyncio.Queue[str]:
@@ -95,6 +97,22 @@ class HermesTaskManager:
     def _register_task(self, task: HermesTask) -> None:
         self._tasks[task.run_id] = task
         self._label_to_run_id[task.label] = task.run_id
+        self._publish_snapshot()
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": task.label,
+                "status": task.status,
+                "elapsed_seconds": time.monotonic() - task.submitted_at,
+                "tokens_used": task.tokens_used,
+            }
+            for task in sorted(self._tasks.values(), key=lambda t: t.submitted_at)
+        ]
+
+    def _publish_snapshot(self) -> None:
+        if self._ui is not None:
+            self._ui.publish_hermes_tasks(self.snapshot())
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
         task = asyncio.create_task(coro)
@@ -257,6 +275,7 @@ class HermesTaskManager:
         task.status = "cancelled"
         task.completed_at = time.monotonic()
         task.voice_summary = f"Task {normalized} was cancelled."
+        self._publish_snapshot()
         return f"Cancelled {normalized}."
 
     async def _watch_run(self, run_id: str) -> None:
@@ -275,6 +294,7 @@ class HermesTaskManager:
 
                 mapped = _map_status(status.status)
                 task.status = mapped
+                self._publish_snapshot()
 
                 if mapped == "waiting_approval":
                     task.voice_summary = (
@@ -311,6 +331,7 @@ class HermesTaskManager:
         if task.voice_summary:
             await self._announce_queue.put(task.voice_summary)
         self._spawn(self._drain_local_queue())
+        self._publish_snapshot()
         logger.info("[hermes] %s finished: %s", task.label, task.status)
 
     async def _summarize_for_voice(self, task: HermesTask) -> str:
@@ -345,6 +366,7 @@ class HermesTaskManager:
                 )
                 response.raise_for_status()
                 data = response.json()
+                task.tokens_used = (data.get("usage") or {}).get("total_tokens")
                 content = data["choices"][0]["message"]["content"]
                 return str(content).strip()
         except Exception:

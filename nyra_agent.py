@@ -13,8 +13,8 @@ from livekit.agents import (
     RunContext,
     WorkerOptions,
     cli,
+    llm,
 )
-from livekit.agents import llm
 from livekit.agents.llm import function_tool
 from livekit.plugins import deepgram, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -38,6 +38,8 @@ from nyra_speech import (
     load_filler_settings,
     load_min_interruption_words,
 )
+from nyra_ui.bridge import get_ui_client
+from nyra_ui.launcher import start_ui_process, stop_ui_process
 
 load_dotenv(".env")
 
@@ -94,6 +96,7 @@ class Assistant(Agent):
         self,
         memory_settings: MemorySettings,
         hermes: HermesTaskManager | None = None,
+        ui_client=None,
     ):
         super().__init__(
             instructions=f"""You are a helpful and friendly voice AI assistant named Nyra.
@@ -106,6 +109,7 @@ class Assistant(Agent):
         self._memory_settings = memory_settings
         self._last_injected_memory = ""
         self._hermes = hermes
+        self._ui = ui_client
 
     @function_tool
     async def get_current_date_and_time(self, context: RunContext) -> str:
@@ -164,7 +168,12 @@ class Assistant(Agent):
         """Recall Cognee memory and Hermes results before the LLM generates a reply."""
         user_text = new_message.text_content
         if user_text:
+            if self._ui is not None:
+                self._ui.publish_memory_status("recalling")
             memory_text = await recall_for_transcript(user_text, self._memory_settings)
+            if self._ui is not None:
+                match_count = len([line for line in memory_text.splitlines() if line.strip()])
+                self._ui.publish_memory_status("done", match_count=match_count)
             if memory_text and memory_text != self._last_injected_memory:
                 _upsert_memory_message(turn_ctx, memory_text)
                 self._last_injected_memory = memory_text
@@ -190,14 +199,18 @@ async def entrypoint(ctx: agents.JobContext):
     memory_settings = load_memory_settings()
     await init_cognee(memory_settings)
 
+    ui = get_ui_client()
+    ui.publish_hello(ctx.room.name)
+
     hermes_settings = load_hermes_settings()
-    hermes_manager = HermesTaskManager(hermes_settings, room_name=ctx.room.name)
+    hermes_manager = HermesTaskManager(hermes_settings, room_name=ctx.room.name, ui_client=ui)
     await hermes_manager.startup()
 
     async def _shutdown() -> None:
         hermes_announcer.stop()
         await hermes_manager.shutdown()
         await shutdown_cognee(memory_settings)
+        await ui.aclose()
 
     ctx.add_shutdown_callback(_shutdown)
 
@@ -231,16 +244,26 @@ async def entrypoint(ctx: agents.JobContext):
     hermes_announcer = HermesResultAnnouncer(session, hermes_manager)
     hermes_announcer.start()
 
-    agent = Assistant(memory_settings=memory_settings, hermes=hermes_manager)
+    agent = Assistant(memory_settings=memory_settings, hermes=hermes_manager, ui_client=ui)
 
     @session.on("agent_state_changed")
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
         hermes_announcer.on_state_changed(ev.new_state)
+        ui.publish_phase(ev.new_state)
         if ev.new_state == "thinking":
             waiting_speech.start()
         elif ev.old_state == "thinking":
             waiting_speech.stop()
+
+    @session.on("user_input_transcribed")
+    def on_user_input_transcribed(ev):
+        ui.publish_stt(ev.transcript, ev.is_final)
+
+    @session.on("conversation_item_added")
+    def on_conversation_item_added(ev):
+        if ev.item.role == "assistant":
+            ui.publish_llm(ev.item.text_content, is_final=True)
 
     await session.start(
         room=ctx.room,
@@ -250,4 +273,8 @@ async def entrypoint(ctx: agents.JobContext):
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    ui_process = start_ui_process()
+    try:
+        cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    finally:
+        stop_ui_process(ui_process)

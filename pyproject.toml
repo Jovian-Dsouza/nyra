@@ -13,6 +13,7 @@ dependencies = [
     "cognee",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.1",
+    "pygame>=2.5.0",
 ]
 
 [tool.uv.sources]
