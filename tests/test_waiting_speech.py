@@ -70,7 +70,7 @@ async def test_start_speaks_after_delay():
     session.say.assert_called_once_with(
         "Still on it — won't be long.",
         add_to_chat_ctx=False,
-        allow_interruptions=False,
+        allow_interruptions=True,
     )
 
 

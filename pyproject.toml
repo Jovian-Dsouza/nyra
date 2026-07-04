@@ -12,6 +12,7 @@ dependencies = [
     "livekit-plugins-turn-detector>=1.0.0",
     "cognee",
     "python-dotenv>=1.0.0",
+    "httpx>=0.28.1",
 ]
 
 [tool.uv.sources]
@@ -78,3 +79,8 @@ python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "pytest-httpx>=0.35.0",
+]

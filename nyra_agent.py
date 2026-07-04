@@ -26,6 +26,12 @@ from cognee_memory import (
     recall_for_transcript,
     shutdown_cognee,
 )
+from hermes_bridge import (
+    HermesResultAnnouncer,
+    HermesTaskManager,
+    load_hermes_settings,
+)
+from hermes_bridge.tasks import upsert_hermes_results_message
 from nyra_speech import (
     GREETING_TEXT,
     WaitingSpeechController,
@@ -39,6 +45,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MEMORY_CONTEXT_ID = "nyra_memory_context"
+
+HERMES_INSTRUCTIONS = """
+You are Nyra, a real-time voice assistant. Keep conversation flowing naturally.
+
+Routing:
+- Handle inline: greetings, chitchat, datetime, quick facts, clarifying questions.
+- Delegate to Hermes (delegate_to_hermes): research, web browsing, file or terminal work,
+  multi-step projects, anything that may take more than ten seconds.
+- Schedule with Hermes (schedule_hermes_task): requests with a future time like
+  "tomorrow at 9am" or "every Monday".
+
+When delegating:
+1. Confirm what was queued using the task label returned by the tool.
+2. Keep talking — never go silent waiting for Hermes.
+3. If the user asks about progress, use list_hermes_tasks.
+4. If the user wants to cancel, use cancel_hermes_task with the task label.
+5. Before re-submitting a similar request, check list_hermes_tasks for duplicates.
+
+When background task results appear in context or are announced, reference them naturally.
+"""
 
 
 def prewarm(proc: JobProcess):
@@ -62,18 +88,24 @@ def _upsert_memory_message(chat_ctx: llm.ChatContext, memory_text: str) -> None:
 
 
 class Assistant(Agent):
-    """Voice assistant with Cognee memory recall before each LLM reply."""
+    """Voice assistant with Cognee memory recall and async Hermes delegation."""
 
-    def __init__(self, memory_settings: MemorySettings):
+    def __init__(
+        self,
+        memory_settings: MemorySettings,
+        hermes: HermesTaskManager | None = None,
+    ):
         super().__init__(
-            instructions="""You are a helpful and friendly voice AI assistant named Nyra.
+            instructions=f"""You are a helpful and friendly voice AI assistant named Nyra.
             You speak clearly and naturally, as if having a phone conversation.
             Be concise but warm in your responses.
             When relevant memory context is provided in the conversation, use it naturally.
-            If you don't know something and no memory context applies, be honest about it."""
+            If you don't know something and no memory context applies, be honest about it.
+            {HERMES_INSTRUCTIONS}"""
         )
         self._memory_settings = memory_settings
         self._last_injected_memory = ""
+        self._hermes = hermes
 
     @function_tool
     async def get_current_date_and_time(self, context: RunContext) -> str:
@@ -81,21 +113,67 @@ class Assistant(Agent):
         current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
         return f"The current date and time is {current_datetime}"
 
+    @function_tool
+    async def delegate_to_hermes(self, context: RunContext, task: str, context_note: str = "") -> str:
+        """Send a task to Hermes for background processing. Returns immediately with a task label.
+        Use for research, web browsing, file work, terminal commands, or any slow multi-step work.
+        Do not use for quick questions you can answer directly.
+
+        Args:
+            task: What Hermes should do.
+            context_note: Optional extra context for Hermes.
+        """
+        if self._hermes is None:
+            return "Background task delegation is not available in this session."
+        return await self._hermes.delegate(task, context=context_note)
+
+    @function_tool
+    async def schedule_hermes_task(self, context: RunContext, task: str, schedule: str) -> str:
+        """Schedule a Hermes task to run later on a cron schedule.
+
+        Args:
+            task: What Hermes should do when the schedule fires.
+            schedule: Cron-style schedule (e.g. '0 9 * * *' for daily at 9am, or natural language
+                schedule string accepted by Hermes).
+        """
+        if self._hermes is None:
+            return "Scheduled task delegation is not available in this session."
+        return await self._hermes.schedule(task, schedule)
+
+    @function_tool
+    async def list_hermes_tasks(self, context: RunContext) -> str:
+        """List pending and recently completed background Hermes tasks."""
+        if self._hermes is None:
+            return "No background task tracking in this session."
+        return self._hermes.list_tasks()
+
+    @function_tool
+    async def cancel_hermes_task(self, context: RunContext, label: str) -> str:
+        """Cancel a background Hermes task by its label (e.g. task-1).
+
+        Args:
+            label: The task label returned when the task was queued.
+        """
+        if self._hermes is None:
+            return "Background task cancellation is not available in this session."
+        return await self._hermes.cancel(label)
+
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
-        """Recall Cognee memory before the LLM generates a reply."""
+        """Recall Cognee memory and Hermes results before the LLM generates a reply."""
         user_text = new_message.text_content
-        if not user_text:
-            return
+        if user_text:
+            memory_text = await recall_for_transcript(user_text, self._memory_settings)
+            if memory_text and memory_text != self._last_injected_memory:
+                _upsert_memory_message(turn_ctx, memory_text)
+                self._last_injected_memory = memory_text
+                logger.info("[memory] injected context before LLM reply")
 
-        memory_text = await recall_for_transcript(user_text, self._memory_settings)
-        if not memory_text or memory_text == self._last_injected_memory:
-            return
-
-        _upsert_memory_message(turn_ctx, memory_text)
-        self._last_injected_memory = memory_text
-        logger.info("[memory] injected context before LLM reply")
+        if self._hermes is not None:
+            results_text = self._hermes.get_results_context()
+            if results_text:
+                upsert_hermes_results_message(turn_ctx, results_text)
 
     async def on_enter(self):
         logger.info("Agent session started")
@@ -112,7 +190,13 @@ async def entrypoint(ctx: agents.JobContext):
     memory_settings = load_memory_settings()
     await init_cognee(memory_settings)
 
+    hermes_settings = load_hermes_settings()
+    hermes_manager = HermesTaskManager(hermes_settings, room_name=ctx.room.name)
+    await hermes_manager.startup()
+
     async def _shutdown() -> None:
+        hermes_announcer.stop()
+        await hermes_manager.shutdown()
         await shutdown_cognee(memory_settings)
 
     ctx.add_shutdown_callback(_shutdown)
@@ -144,11 +228,15 @@ async def entrypoint(ctx: agents.JobContext):
         delay=filler_delay,
         min_interval=filler_min_interval,
     )
-    agent = Assistant(memory_settings=memory_settings)
+    hermes_announcer = HermesResultAnnouncer(session, hermes_manager)
+    hermes_announcer.start()
+
+    agent = Assistant(memory_settings=memory_settings, hermes=hermes_manager)
 
     @session.on("agent_state_changed")
     def on_state_changed(ev):
         logger.info("State: %s -> %s", ev.old_state, ev.new_state)
+        hermes_announcer.on_state_changed(ev.new_state)
         if ev.new_state == "thinking":
             waiting_speech.start()
         elif ev.old_state == "thinking":

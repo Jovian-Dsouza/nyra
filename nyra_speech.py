@@ -79,6 +79,9 @@ class WaitingSpeechController:
         if self._handle is not None:
             try:
                 self._handle.interrupt()
+            except RuntimeError:
+                # Filler was created without allow_interruptions — already finished.
+                pass
             except Exception:
                 logger.debug("[speech] filler interrupt failed", exc_info=True)
             self._handle = None
@@ -106,7 +109,7 @@ class WaitingSpeechController:
             self._handle = self._session.say(
                 phrase,
                 add_to_chat_ctx=False,
-                allow_interruptions=False,
+                allow_interruptions=True,
             )
             self._last_spoken_at = time.monotonic()
         except asyncio.CancelledError:
