@@ -8,6 +8,7 @@ that spawned this process.
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Protocol
 
@@ -18,6 +19,18 @@ from nyra_ui.renderer import PygameRenderer
 from nyra_ui.state import UIState
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_env(value: str) -> str:
+    return value.strip().strip('"').strip("'")
+
+
+def _fullscreen_enabled() -> bool:
+    return _strip_env(os.environ.get("NYRA_UI_FULLSCREEN", "false")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 class StateSource(Protocol):
@@ -31,7 +44,10 @@ class UIApp:
     def run(self) -> None:
         pygame.init()
         pygame.display.set_caption("Nyra")
-        screen = pygame.display.set_mode((const.SCREEN_WIDTH, const.SCREEN_HEIGHT))
+        flags = pygame.FULLSCREEN if _fullscreen_enabled() else 0
+        screen = pygame.display.set_mode((const.SCREEN_WIDTH, const.SCREEN_HEIGHT), flags)
+        if flags & pygame.FULLSCREEN:
+            pygame.mouse.set_visible(False)
         renderer = PygameRenderer()
         clock = pygame.time.Clock()
         start = pygame.time.get_ticks()
@@ -40,6 +56,8 @@ class UIApp:
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
 
             elapsed = (pygame.time.get_ticks() - start) / 1000.0
