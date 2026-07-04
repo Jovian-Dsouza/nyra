@@ -281,6 +281,7 @@ class PygameRenderer:
     def _draw_conversation_field(self, surface, state: UIState, y: int) -> int:
         """Shows exactly one side of the conversation at a time — whichever is
         actively speaking — instead of stacking "You" and "Nyra" together."""
+        placeholder = False
         if state.phase is UIPhase.SPEAKING:
             label, text, is_final = "Nyra", state.llm_text, state.is_final_llm
             gradient = True
