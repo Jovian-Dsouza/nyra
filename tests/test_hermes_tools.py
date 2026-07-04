@@ -50,7 +50,7 @@ async def test_delegate_tool_returns_without_awaiting_watcher():
 
     elapsed = time.monotonic() - submit_started
     assert elapsed < 1.0
-    assert result.startswith("Queued as task-1:")
+    assert result.startswith("Queued as Compile A Report:")
     submit_mock.assert_awaited_once()
 
 
@@ -75,4 +75,4 @@ async def test_schedule_hermes_task():
         task="send briefing",
         schedule="0 9 * * *",
     )
-    assert "Scheduled as task-1" in result
+    assert "Scheduled as Send Briefing" in result

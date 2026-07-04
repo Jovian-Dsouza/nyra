@@ -186,10 +186,10 @@ class Assistant(Agent):
 
     @function_tool
     async def cancel_hermes_task(self, context: RunContext, label: str) -> str:
-        """Cancel a background Hermes task by its label (e.g. task-1).
+        """Cancel a background Hermes task by its name (e.g. Weather in Tokyo).
 
         Args:
-            label: The task label returned when the task was queued.
+            label: The task name returned when the task was queued.
         """
         if self._hermes is None:
             return "Background task cancellation is not available in this session."

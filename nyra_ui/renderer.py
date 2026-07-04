@@ -177,20 +177,24 @@ class PygameRenderer:
         except (FileNotFoundError, pygame.error):
             return None
 
-    def _load_logos(self) -> dict[str, "pygame.Surface"]:
-        logos = {}
+    def _load_logo(self, filename: str, height: int) -> "pygame.Surface | None":
         assets_dir = __file__.rsplit("/", 1)[0] + "/assets"
-        for name, filename in (("cognee", "cognee_logo.png"), ("hermes", "hermes_logo.png")):
-            path = f"{assets_dir}/{filename}"
-            try:
-                image = _crop_to_content(pygame.image.load(path).convert_alpha())
-                scale = const.LOGO_HEIGHT / image.get_height()
-                size = (max(1, int(image.get_width() * scale)), const.LOGO_HEIGHT)
-                scaled = pygame.transform.smoothscale(image, size)
-                logos[name] = _tint_logo(scaled, const.INK_DIM)
-            except (FileNotFoundError, pygame.error):
-                logos[name] = None
-        return logos
+        path = f"{assets_dir}/{filename}"
+        try:
+            image = _crop_to_content(pygame.image.load(path).convert_alpha())
+            scale = height / image.get_height()
+            size = (max(1, int(image.get_width() * scale)), height)
+            scaled = pygame.transform.smoothscale(image, size)
+            return _tint_logo(scaled, const.INK_DIM)
+        except (FileNotFoundError, pygame.error):
+            return None
+
+    def _load_logos(self) -> dict[str, "pygame.Surface"]:
+        return {
+            "cognee": self._load_logo("cognee_logo.png", const.LOGO_HEIGHT),
+            "cognee_inline": self._load_logo("cognee_logo.png", const.MEMORY_LOGO_HEIGHT),
+            "hermes": self._load_logo("hermes_logo.png", const.LOGO_HEIGHT),
+        }
 
     def _blit_glow(self, surface, source: "pygame.Surface", center: tuple, diameter: float) -> None:
         # Plain alpha compositing, not BLEND_RGBA_ADD: ADD ignores per-pixel
@@ -312,17 +316,27 @@ class PygameRenderer:
 
     def _draw_memory_field(self, surface, state: UIState, y: int) -> int:
         if state.memory_status == "recalling":
-            text = "Memory — recalling…"
+            text = "recalling…"
         elif state.memory_status == "done":
             count = state.memory_match_count or 0
             noun = "match" if count == 1 else "matches"
-            text = f"Memory — {count} {noun} recalled" if count else "Memory — no matches"
+            text = f"{count} {noun} recalled" if count else "no matches"
         else:
             text = ""
-        if text:
-            rendered = self._font_mono.render(text, True, const.INK_FAINT)
-            surface.blit(rendered, (const.MARGIN_X, y))
-        return y + 18 + const.FIELD_GAP // 2
+        if not text:
+            return y + 18 + const.FIELD_GAP // 2
+
+        row_height = 18
+        text_x = const.MARGIN_X
+        cognee = self._logos.get("cognee_inline") or self._logos.get("cognee")
+        if cognee is not None:
+            logo_y = y + (row_height - cognee.get_height()) // 2
+            surface.blit(cognee, (const.MARGIN_X, logo_y))
+            text_x = const.MARGIN_X + cognee.get_width() + 8
+
+        rendered = self._font_mono.render(text, True, const.INK_FAINT)
+        surface.blit(rendered, (text_x, y))
+        return y + row_height + const.FIELD_GAP // 2
 
     def _draw_hermes_field(self, surface, state: UIState, y: int) -> int:
         tasks = state.hermes_tasks

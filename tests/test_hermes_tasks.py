@@ -5,7 +5,7 @@ import pytest
 
 from hermes_bridge.client import HermesClientError, RunStatus, SubmitRunResult
 from hermes_bridge.settings import HermesSettings, is_configured, load_hermes_settings
-from hermes_bridge.tasks import HermesTaskManager, _map_status, _short_description
+from hermes_bridge.tasks import HermesTaskManager, _derive_label_from_prompt, _map_status, _short_description
 
 
 def _settings(**overrides) -> HermesSettings:
@@ -54,6 +54,11 @@ def test_short_description_truncates():
     assert result.endswith("…")
 
 
+def test_derive_label_from_prompt():
+    assert _derive_label_from_prompt("research the weather in Tokyo") == "Research The Weather In Tokyo"
+    assert _derive_label_from_prompt("please find my latest invoices") == "Find My Latest Invoices"
+
+
 @pytest.mark.asyncio
 async def test_delegate_submits_and_returns_immediately():
     manager = HermesTaskManager(_settings(), room_name="test-room")
@@ -67,7 +72,7 @@ async def test_delegate_submits_and_returns_immediately():
     with patch.object(manager, "_spawn"):
         result = await manager.delegate("research the weather in Tokyo")
 
-    assert result.startswith("Queued as task-1:")
+    assert result.startswith("Queued as Research The Weather In Tokyo:")
     assert "run_1" in manager._tasks
     submit_mock.assert_awaited_once()
 
@@ -142,21 +147,21 @@ async def test_cancel_active_task():
     manager = HermesTaskManager(_settings(), room_name="test-room")
     from hermes_bridge.tasks import HermesTask
 
-    task = HermesTask(run_id="run_1", label="task-1", prompt="slow job", status="running")
+    task = HermesTask(run_id="run_1", label="Slow Job", prompt="slow job", status="running")
     manager._register_task(task)
     manager._client.stop_run = AsyncMock()
 
-    result = await manager.cancel("task-1")
-    assert "Cancelled task-1" in result
+    result = await manager.cancel("Slow Job")
+    assert "Cancelled Slow Job" in result
     assert manager._tasks["run_1"].status == "cancelled"
 
 
 @pytest.mark.asyncio
 async def test_cancel_removes_local_queue_entry():
     manager = HermesTaskManager(_settings(), room_name="test-room")
-    manager._local_queue.append(("task-5", "queued prompt"))
-    result = await manager.cancel("task-5")
-    assert "Removed task-5" in result
+    manager._local_queue.append(("Queued Prompt", "queued prompt"))
+    result = await manager.cancel("Queued Prompt")
+    assert "Removed Queued Prompt" in result
     assert manager._local_queue == []
 
 
@@ -181,7 +186,7 @@ def test_get_results_context_includes_completed_summaries():
 
     task = HermesTask(
         run_id="run_1",
-        label="task-1",
+        label="Tokyo Weather",
         prompt="research",
         status="completed",
         voice_summary="Tokyo is sunny.",
@@ -190,7 +195,7 @@ def test_get_results_context_includes_completed_summaries():
     manager._register_task(task)
     context = manager.get_results_context()
     assert context is not None
-    assert "task-1" in context
+    assert "Tokyo Weather" in context
     assert "Tokyo is sunny" in context
 
 

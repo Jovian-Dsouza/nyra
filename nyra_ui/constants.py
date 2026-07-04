@@ -45,6 +45,7 @@ HERMES_ROW_HEIGHT = 22
 HERMES_MAX_VISIBLE_TASKS = 3
 FOOTER_HEIGHT = 56
 LOGO_HEIGHT = 36
+MEMORY_LOGO_HEIGHT = 14
 
 LISTENING_PROMPT = "Speak something to start working."
 """Shown under the You field while Nyra is listening and no speech has arrived yet."""

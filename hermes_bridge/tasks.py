@@ -33,6 +33,13 @@ Result:
 {output}
 """
 
+_LABEL_PROMPT = """Give a short task name (2-5 words, Title Case) for this background job request.
+Return ONLY the name — no quotes, punctuation, or extra text.
+
+Request:
+{prompt}
+"""
+
 
 @dataclass
 class HermesTask:
@@ -65,7 +72,6 @@ class HermesTaskManager:
         self._client = HermesClient(settings, session_key=self._session_key)
         self._tasks: dict[str, HermesTask] = {}
         self._label_to_run_id: dict[str, str] = {}
-        self._next_label_num = 0
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._announce_queue: asyncio.Queue[str] = asyncio.Queue()
         self._healthy: bool | None = None
@@ -131,9 +137,91 @@ class HermesTaskManager:
         else:
             logger.warning("[hermes] gateway unreachable at %s", self._settings.api_url)
 
-    def _next_label(self) -> str:
-        self._next_label_num += 1
-        return f"task-{self._next_label_num}"
+    def _existing_labels(self) -> set[str]:
+        labels = {label.lower() for label in self._label_to_run_id}
+        labels.update(label.lower() for label, _ in self._local_queue)
+        return labels
+
+    def _unique_label(self, base: str) -> str:
+        candidate = base.strip() or "Background Task"
+        existing = self._existing_labels()
+        if candidate.lower() not in existing:
+            return candidate
+        suffix = 2
+        while True:
+            numbered = f"{candidate} ({suffix})"
+            if numbered.lower() not in existing:
+                return numbered
+            suffix += 1
+
+    async def _resolve_task_label(self, prompt: str) -> str:
+        base = _derive_label_from_prompt(prompt)
+        if self._settings.openai_api_key:
+            try:
+                llm_name = await self._llm_task_label(_prompt_only(prompt))
+                if llm_name:
+                    base = llm_name
+            except Exception:
+                logger.debug("[hermes] LLM task label failed, using heuristic", exc_info=True)
+        return self._unique_label(base)
+
+    async def _llm_task_label(self, prompt: str) -> str | None:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self._settings.openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self._settings.summarize_model,
+                    "temperature": 0.2,
+                    "max_tokens": 24,
+                    "messages": [{"role": "user", "content": _LABEL_PROMPT.format(prompt=prompt)}],
+                },
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+            cleaned = " ".join(str(content).strip().strip('"\'').split())
+            if not cleaned:
+                return None
+            if len(cleaned) > 48:
+                cleaned = cleaned[:47].rstrip() + "…"
+            return cleaned
+
+    def _find_label(self, query: str) -> str | None:
+        if not query:
+            return None
+
+        if query in self._label_to_run_id:
+            return query
+
+        lowered = query.lower()
+        for label in self._label_to_run_id:
+            if label.lower() == lowered:
+                return label
+
+        for label, _ in self._local_queue:
+            if label.lower() == lowered:
+                return label
+
+        partial = [
+            label
+            for label in self._label_to_run_id
+            if lowered in label.lower() or label.lower() in lowered
+        ]
+        if len(partial) == 1:
+            return partial[0]
+
+        if not query.startswith("task-"):
+            legacy = f"task-{query}"
+            if legacy in self._label_to_run_id:
+                return legacy
+            for label, _ in self._local_queue:
+                if label == legacy:
+                    return legacy
+
+        return None
 
     def _active_count(self) -> int:
         return sum(
@@ -184,7 +272,7 @@ class HermesTaskManager:
             full_prompt = f"{task_prompt}\n\nAdditional context: {context.strip()}"
 
         if self._active_count() >= self._settings.max_concurrent:
-            label = self._next_label()
+            label = await self._resolve_task_label(full_prompt)
             self._local_queue.append((label, full_prompt))
             position = len(self._local_queue)
             return (
@@ -195,7 +283,7 @@ class HermesTaskManager:
         return await self._submit_run(full_prompt)
 
     async def _submit_run(self, full_prompt: str, *, label: str | None = None) -> str:
-        label = label or self._next_label()
+        label = label or await self._resolve_task_label(full_prompt)
         short_desc = _short_description(full_prompt)
 
         try:
@@ -210,7 +298,7 @@ class HermesTaskManager:
             )
         except HermesClientError as exc:
             if exc.status_code == 429:
-                queued_label = self._next_label()
+                queued_label = await self._resolve_task_label(full_prompt)
                 self._local_queue.append((queued_label, full_prompt))
                 return (
                     f"Hermes is at capacity — I've queued this as {queued_label} "
@@ -241,8 +329,8 @@ class HermesTaskManager:
         if self._healthy is False:
             return "I can't reach the Hermes gateway right now."
 
-        label = self._next_label()
-        name = f"nyra-{label}"
+        label = await self._resolve_task_label(task_prompt)
+        name = f"nyra-{label.lower().replace(' ', '-')}"
         try:
             result = await self._client.create_scheduled_job(
                 name=name,
@@ -291,9 +379,9 @@ class HermesTaskManager:
         return "Background tasks:\n" + "\n".join(lines)
 
     async def cancel(self, label: str) -> str:
-        normalized = label.strip().lower()
-        if not normalized.startswith("task-"):
-            normalized = f"task-{normalized}"
+        normalized = self._find_label(label.strip())
+        if normalized is None:
+            return f"I couldn't find a task called {label.strip()}."
 
         run_id = self._label_to_run_id.get(normalized)
         if run_id is None:
@@ -489,6 +577,29 @@ def _map_status(hermes_status: str) -> TaskStatus:
     if "approval" in normalized:
         return "waiting_approval"
     return "running"
+
+
+def _prompt_only(full_prompt: str) -> str:
+    return full_prompt.split("\n\nAdditional context:")[0].strip()
+
+
+def _derive_label_from_prompt(prompt: str, *, max_words: int = 5, max_chars: int = 48) -> str:
+    text = " ".join(_prompt_only(prompt).split())
+    if not text:
+        return "Background Task"
+
+    words = text.split()
+    skip = frozenset({
+        "please", "can", "you", "could", "would", "will", "want", "need",
+        "help", "me", "to", "the", "a", "an", "my", "i", "and", "for",
+    })
+    while len(words) > 1 and words[0].lower() in skip:
+        words.pop(0)
+
+    snippet = " ".join(words[:max_words])
+    if len(snippet) > max_chars:
+        snippet = snippet[: max_chars - 1].rstrip() + "…"
+    return snippet.title()
 
 
 def _short_description(prompt: str, max_len: int = 60) -> str:
